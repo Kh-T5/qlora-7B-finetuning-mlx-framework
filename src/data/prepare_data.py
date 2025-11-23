@@ -1,6 +1,17 @@
 from datasets import load_dataset
 from transformers import AutoTokenizer
-from src.config import MODEL_NAME, MAX_LENGTH, Dataset_dolly, tokenized_ds_path
+from src.config import MODEL_NAME, MAX_LENGTH, Dataset_dolly, tokenized_ds_path, SEED, split_val
+
+
+
+### Init tokenizer
+tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME, use_fast=True)
+tokenizer.pad_token = tokenizer.eos_token
+tokenizer.pad_token_id = tokenizer.eos_token_id
+
+# Using same token for padding and delimitting end of sentence
+eos_id = tokenizer.eos_token_id
+pad_id = tokenizer.pad_token_id
 
 
 def preprocess_batch(batch):
@@ -71,23 +82,23 @@ def preprocess_batch(batch):
 
 if __name__=="__main__":
         
-
-    dolly_ds = load_dataset(Dataset_dolly)
-    tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME, use_fast=True)
-    tokenizer.pad_token = tokenizer.eos_token
-    tokenizer.pad_token_id = tokenizer.eos_token_id
-
-    # Using same token for padding and delimitting end of sentence
-    eos_id = tokenizer.eos_token_id
-    pad_id = tokenizer.pad_token_id
-
+    print("Loading dataset...")
+    dolly_ds = load_dataset(Dataset_dolly)["train"]
     
-    ### Tokenizing the dataset, keeping only "input_ids", "labels" and "attention_mask" columns
+    ### Tokenizing the dataset
+    print("Tokenizing Dolly dataset...")
     tokenized_ds = dolly_ds.map(
         preprocess_batch,
-        batched=True,
-        remove_columns=[col for col in dolly_ds["train"].column_names if col not in ("input_ids", "labels", "attention_mask")],
+        batched=True
+    )
+    print("Splitting...")
+    split_ds = tokenized_ds.train_test_split(
+        test_size=split_val,
+        seed=SEED,
+        shuffle=True,
     )
 
     ### Saving data using hugging face dataset
-    tokenized_ds.save_to_disk(tokenized_ds_path)
+    print("Saving tokenized dataset...")
+    split_ds.save_to_disk(tokenized_ds_path)
+    print("Done.")
