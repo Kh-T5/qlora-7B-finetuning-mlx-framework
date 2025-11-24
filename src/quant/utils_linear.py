@@ -7,7 +7,7 @@ from src.quant.quant_4bit import quantize_4bit_per_row, dequantize_4bit_per_row
 class QuantizedLinear(nn.Module):
     """
     Linear layer corresponding to frozen 4bit mx.arrays. 
-    It performs dequant and quant internally along with matmul.
+    It performs dequantization and quantization internally in the forward pass.
 
     Internally stores:
         - weight_q: (out_features x ceil(in_features/2))uint8
@@ -58,18 +58,18 @@ class QuantizedLinear(nn.Module):
             QuantizedLinear with 4-bit weights corresponding to the frozen "weight".
         """
         out_features, in_features = weight.shape
-        mod = cls(in_features, out_features, bias=bias is not None)
+        new_cls = cls(in_features, out_features, bias=bias is not None)
 
         quant_W, scale, row_min, orig_cols = quantize_4bit_per_row(weight)
-        mod.quant_W = quant_W
-        mod.scale = scale
-        mod.row_min = row_min
-        mod.orig_in_features = orig_cols
+        new_cls.quant_W = quant_W
+        new_cls.scale = scale
+        new_cls.row_min = row_min
+        new_cls.orig_in_features = orig_cols
 
         if bias is not None:
-            mod.bias = bias.astype(mx.float32)
+            new_cls.bias = bias.astype(mx.float32)
 
-        return mod
+        return new_cls
 
     def _dequantize_weight(self) -> mx.array:
         """
@@ -87,7 +87,10 @@ class QuantizedLinear(nn.Module):
 
     def __call__(self, x: mx.array) -> mx.array:
         """
-        Performs linear transformation using x and dequantized weights. 
+        Performs linear forward pass. 
+        Dequantizes the frozen weights W, computes and returns Wx + (bias optional)
+
+        Input: x mx.array
         """
         W = self._dequantize_weight()           
         y = x @ W.T                            
@@ -167,9 +170,7 @@ class LoRALinear(nn.Module):
 
     def __call__(self, x: mx.array, use_lora: bool = True) -> mx.array:
         """
-        x: [batch, in_features]
-        Returns:
-            y: [batch, out_features]
+        Performs QLoRA forward pass on a Linear layer.
         """
         ## Frozen weights call (QuantizedLinear module)
         y = self.base(x)

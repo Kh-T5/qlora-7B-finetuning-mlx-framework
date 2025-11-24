@@ -1,4 +1,4 @@
-from src.data_loader_mlx import load_tokenized, batch_iter
+from src.data.data_loader_mlx import load_tokenized, batch_iter
 from src.config import tokenized_ds_path 
 
 
