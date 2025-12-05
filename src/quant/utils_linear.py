@@ -3,14 +3,13 @@ import mlx.nn as nn
 from src.quant.quant_4bit import quantize_4bit_per_row, dequantize_4bit_per_row
 
 
-
 class QuantizedLinear(nn.Module):
     """
-    Linear layer corresponding to frozen 4bit mx.arrays. 
+    Linear layer corresponding to frozen 4bit mx.arrays.
     It performs dequantization and quantization internally in the forward pass.
 
     Internally stores:
-        - weight_q: (out_features x ceil(in_features/2))uint8
+        - weight_q: (out_features x ceil(in_features/2)) uint8
         - scale:    (out_features) float32
         - row_min:  (out_features) float32
         - orig_in_features: int
@@ -31,7 +30,7 @@ class QuantizedLinear(nn.Module):
         # init dim
         self.in_features = in_features
         self.out_features = out_features
-        packed_cols = (in_features + 1) // 2    
+        packed_cols = (in_features + 1) // 2
 
         # init params
         self.quant_W = mx.zeros((out_features, packed_cols), dtype=mx.uint8)
@@ -52,7 +51,7 @@ class QuantizedLinear(nn.Module):
 
         Inputs:
             weight: (out_features x in_features) float array
-            bias:   (out_features) float mlx array 
+            bias:   (out_features) float mlx array
 
         Returns:
             QuantizedLinear with 4-bit weights corresponding to the frozen "weight".
@@ -79,7 +78,7 @@ class QuantizedLinear(nn.Module):
             W_approx: float32 mlx.core.array
         """
         return dequantize_4bit_per_row(
-            self.weight_q,
+            self.quant_W,
             self.scale,
             self.row_min,
             self.orig_in_features,
@@ -87,21 +86,18 @@ class QuantizedLinear(nn.Module):
 
     def __call__(self, x: mx.array) -> mx.array:
         """
-        Performs linear forward pass. 
+        Performs linear forward pass.
         Dequantizes the frozen weights W, computes and returns Wx + (bias optional)
 
         Input: x mx.array
         """
-        W = self._dequantize_weight()           
-        y = x @ W.T                            
+        W = self._dequantize_weight()
+        y = x @ W.T
 
         if self.bias is not None:
-            y = y + self.bias                  
+            y = y + self.bias
 
         return y
-    
-
-
 
 
 class LoRALinear(nn.Module):
@@ -109,13 +105,13 @@ class LoRALinear(nn.Module):
     Wrap a QuantizedLinear layer (mlx-adapted 4-bit quantized layer) with LoRA adapters.
 
 
-    y = (frozen_weights + adapter) * x 
+    y = (frozen_weights + adapter) * x
 
     - base:    QuantizedLinear
     - A:       (in_features x r)
     - B:       (r x out_features)
-        --> Adding adapters to specific layers of the 7b model. Adapters consists of low rank (r) 
-        matrices A & B. During Training, only A & B are learned. 
+        --> Adding adapters to specific layers of the 7b model. Adapters consists of low rank (r)
+        matrices A & B. During Training, only A & B are learned.
     """
 
     def __init__(
@@ -126,7 +122,6 @@ class LoRALinear(nn.Module):
         dropout: float,
     ):
         super().__init__()
-
 
         self.base = base
         self.r = r
@@ -144,14 +139,13 @@ class LoRALinear(nn.Module):
         self.dropout = nn.Dropout(dropout) if dropout > 0.0 else None
         self.params_init()
 
-
     def params_init(self):
         """
         LoRA A & B matrices initialization:
                 - A: small random normal distribution
                 - B: zero
         """
-        nn.init.normal(self.lora_A.weight, mean=0.0, std=0.01)
+        nn.init.normal(self.lora_A.weight, std=0.01)
         self.lora_B.weight = mx.zeros_like(self.lora_B.weight)
 
     @classmethod
@@ -162,9 +156,8 @@ class LoRALinear(nn.Module):
         alpha: float,
         dropout: float,
     ) -> "LoRALinear":
-        
         """
-        Helper to build a LoRALinear on top of an existing QuantizedLinear.
+        Build a LoRALinear on top of an existing QuantizedLinear.
         """
         return cls(base=base, r=r, alpha=alpha, dropout=dropout)
 
@@ -175,7 +168,7 @@ class LoRALinear(nn.Module):
         ## Frozen weights call (QuantizedLinear module)
         y = self.base(x)
 
-        ## Adapters call 
+        ## Adapters call
         if use_lora and self.r > 0:
             if self.dropout is not None and self.training:
                 x_lora = self.dropout(x)
