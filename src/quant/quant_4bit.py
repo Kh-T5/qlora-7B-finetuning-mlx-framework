@@ -62,7 +62,7 @@ def dequantize_4bit_per_row(
         origin_n_cols: original number of columns before packing
 
     Ouput:
-        W_approx: float32, dequantized weights, used for computation.
+        W_approx: mx.array, dequantized weights, used for computation.
     """
     n_rows, packed_cols = quant_W.shape
     # unpack two 4-bit values from each byte

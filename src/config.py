@@ -14,9 +14,18 @@ mistral_other_layers_quant_path = (
 
 ### Model Params
 eps_rmsnorm = 1e-5
+hidden_size_atten = 4096
+rms_norm_eps = 1e-5
+num_attention_heads = 32
+num_key_value_heads = 8
+head_dim = 128
+rope_theta = 1e4
+hidden_size_mlp = 14336
+num_layers = 32
+
 
 ### Training aprams
 LoRA_r = 8
-alpa = 16
+alpha = 16
 epochs = 20
 dropout = 0.0
