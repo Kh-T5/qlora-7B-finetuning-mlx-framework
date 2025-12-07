@@ -6,7 +6,7 @@ from src.quant.quant_4bit import quantize_4bit_per_row, dequantize_4bit_per_row
 class QuantizedLinear(nn.Module):
     """
     Linear layer corresponding to frozen 4bit mx.arrays.
-    It performs dequantization and quantization internally in the forward pass.
+    It performs dequantization internally in the forward pass.
 
     Internally stores:
         - weight_q: (out_features x ceil(in_features/2)) uint8
@@ -23,6 +23,7 @@ class QuantizedLinear(nn.Module):
         self,
         in_features: int,
         out_features: int,
+        *,
         bias: bool = True,
     ):
         super().__init__()
@@ -67,6 +68,46 @@ class QuantizedLinear(nn.Module):
 
         if bias is not None:
             new_cls.bias = bias.astype(mx.float32)
+
+        return new_cls
+
+    @classmethod
+    def from_packed(
+        cls,
+        quant_W,
+        scale,
+        row_min,
+        orig_in_features: int,
+        bias=None,
+    ) -> "QuantizedLinear":
+        """
+        Build directly from already-quantized weights
+        Adapted to the way weights was saved -> src.model.convert_weights_mlx
+        Given saved quantized weights:
+            - quant_W, mx.array (out, in), dtype mx.uint8
+            - scale, mx.array (out, ), dtype float
+            - row_min, mx.array (out, ), dtype float
+            - orig_in_features, int
+
+        returns QuantizedLinear initialiazed with provided quantized weights.
+        """
+        # Ensure we have MX arrays with correct dtypes
+        quant_W = mx.array(quant_W, dtype=mx.uint8)
+        scale = mx.array(scale, dtype=mx.float32)
+        row_min = mx.array(row_min, dtype=mx.float32)
+
+        out_features, _ = quant_W.shape
+        in_features = int(orig_in_features)
+
+        new_cls = cls(in_features, out_features, bias=bias is not None)
+
+        new_cls.quant_W = quant_W
+        new_cls.scale = scale
+        new_cls.row_min = row_min
+        new_cls.orig_in_features = in_features
+
+        if bias is not None:
+            new_cls.bias = mx.array(bias, dtype=mx.float32)
 
         return new_cls
 

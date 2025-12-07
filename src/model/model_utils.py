@@ -1,24 +1,40 @@
 import mlx.nn as nn
-from src.config import *
 from dataclasses import dataclass
 from src.quant.utils_linear import LoRALinear, QuantizedLinear
 import mlx.core as mx
 import math
+from src.config import (
+    alpha,
+    dropout,
+    LoRA_r,
+    hidden_size_atten,
+    rms_norm_eps,
+    num_attention_heads,
+    num_key_value_heads,
+    head_dim,
+    rope_theta,
+    hidden_size_mlp,
+    num_layers,
+)
 
 
 @dataclass
 class MistralConfig:
-    ### Lora
-    alpha: float
-    dropout: float
-    r: int = 16
+    ### LoRA
+    alpha: float = alpha
+    dropout: float = dropout
+    r: int = LoRA_r
     ### Attention
-    hidden_size: int = 4096
-    rms_norm_eps: float = 1e-5
-    num_attention_heads: int = 32
-    num_key_value_heads: int = 8
-    head_dim: int = 128
-    rope_theta: float = 1e4
+    hidden_size_atten: int = hidden_size_atten
+    rms_norm_eps: float = rms_norm_eps
+    num_attention_heads: int = num_attention_heads
+    num_key_value_heads: int = num_key_value_heads
+    head_dim: int = head_dim
+    rope_theta: float = rope_theta
+    ### MLP
+    hidden_size_mlp: int = hidden_size_mlp
+    ### Decoder
+    num_layers: int = num_layers
 
 
 ### ----------------- Attention Block -----------------------
@@ -34,7 +50,7 @@ class MistralAttention(nn.Module):
         super().__init__()
 
         # Attention params
-        self.hidden_size = config.hidden_size
+        self.hidden_size = config.hidden_size_atten
         self.num_heads = config.num_attention_heads
         self.num_kv_heads = config.num_key_value_heads
         self.head_dim = config.head_dim
@@ -66,10 +82,79 @@ class MistralAttention(nn.Module):
         self.o_proj = linear_cls(self.hidden_size, self.hidden_size, bias=use_bias)
 
     @classmethod
-    def from_quantized_weights(cls, config, weights: dict):
+    def from_quantized_weights(cls, config: MistralConfig, packed_weights: dict):
         """
-        Given weights dict, initialize the MistralAttention class with LoRALinear layers.
+        Returns a MistralAttention initialized with provided weights & config.
+        Inputs:
+        - config, MistralConfig
+        - packed_weights, dict, looks like :  {
+                                        "q_proj": {
+                                            "weight_q": quantized_weights,
+                                            "scale": scale,
+                                            "row_min": row_min,
+                                            "orig_in": orig_in
+                                            },
+                                        "k_proj": {
+                                            "weight_q": quantized_weights,
+                                            "scale": scale,
+                                            "row_min": row_min,
+                                            "orig_in": orig_in
+                                            },
+                                        ...
+                                    }
+        """
+        attn = cls(config)
+        r = attn.r
+        alpha = attn.alpha
+        dropout = attn.dropout
 
+        # q_proj
+        packed_weights_q = packed_weights["q_proj"]
+        base_q = QuantizedLinear.from_packed(
+            packed_weights_q["weight_q"],
+            packed_weights_q["scale"],
+            packed_weights_q["row_min"],
+            packed_weights_q["orig_in"],
+        )
+        attn.q_proj = LoRALinear(base=base_q, r=r, alpha=alpha, dropout=dropout)
+
+        # v_proj
+        packed_weights_v = packed_weights["v_proj"]
+        base_v = QuantizedLinear.from_packed(
+            packed_weights_v["weight_q"],
+            packed_weights_v["scale"],
+            packed_weights_v["row_min"],
+            packed_weights_v["orig_in"],
+        )
+        attn.v_proj = LoRALinear(base=base_v, r=r, alpha=alpha, dropout=dropout)
+
+        # k_proj
+        packed_weights_k = packed_weights["k_proj"]
+        base_k = QuantizedLinear.from_packed(
+            packed_weights_k["weight_q"],
+            packed_weights_k["scale"],
+            packed_weights_k["row_min"],
+            packed_weights_k["orig_in"],
+        )
+        attn.k_proj = LoRALinear(base=base_k, r=r, alpha=alpha, dropout=dropout)
+
+        # o_proj
+        packed_weights_o = packed_weights["o_proj"]
+        base_o = QuantizedLinear.from_packed(
+            packed_weights_o["weight_q"],
+            packed_weights_o["scale"],
+            packed_weights_o["row_min"],
+            packed_weights_o["orig_in"],
+        )
+        attn.o_proj = LoRALinear(base=base_o, r=r, alpha=alpha, dropout=dropout)
+
+        return attn
+
+    @classmethod
+    def from_weights(cls, config, weights: dict):
+        """
+        Given weights dict, initialize the MistralAttention
+        class with LoRALinear layers with given weights.
         Inputs:
                 - config: MistralConfig
                 - weights: dict of weigths
@@ -190,9 +275,9 @@ class MistralAttention(nn.Module):
         x: (B, T, D)
         attn_mask:
             Optional, broadcastable to (B, 1, T, S),
-            usually contains 0 for allowed, -inf for masked.
+            contains 0 for allowed, -inf for masked.
         cache:
-            Optional dict with "k" and "v" for KV cache:
+            Optional dict with "k" and "v" for K & V cache:
                 "k": (B, H_kv, T_past, Dh)
                 "v": (B, H_kv, T_past, Dh)
         positions:
@@ -257,3 +342,138 @@ class MistralAttention(nn.Module):
 
 
 ### ----------------- MLP Block -----------------------
+
+
+class MistralMLP(nn.Module):
+    def __init__(
+        self, config: MistralConfig, *, linear_cls=nn.Linear, use_bias: bool = False
+    ):
+        super().__init__()
+
+        # Attention params
+        self.hidden_size = config.hidden_size_mlp
+        self.input_size = config.hidden_size_atten
+        # LoRA params
+        self.r = config.r
+        self.alpha = config.alpha
+        self.dropout = config.dropout
+
+        self.gate_proj = linear_cls(self.input_size, self.hidden_size, bias=use_bias)
+        self.up_proj = linear_cls(self.input_size, self.hidden_size, bias=use_bias)
+        self.down_proj = linear_cls(self.hidden_size, self.input_size, bias=use_bias)
+
+    @classmethod
+    def from_quantized_weights(cls, config: MistralConfig, packed_weights: dict):
+        """
+        Returns a MistralMLP initialized with provided weights & config.
+        Inputs:
+        - config, MistralConfig
+        - packed_weights, dict, looks like :  {
+                                        "gate_proj": {
+                                            "weight_q": quantized_weights,
+                                            "scale": scale,
+                                            "row_min": row_min,
+                                            "orig_in": orig_in
+                                            },
+                                        "down_proj": {
+                                            "weight_q": quantized_weights,
+                                            "scale": scale,
+                                            "row_min": row_min,
+                                            "orig_in": orig_in
+                                            },
+                                        ...
+                                    }
+        """
+        mlp = cls(config)
+        r = mlp.r
+        alpha = mlp.alpha
+        dropout = mlp.dropout
+
+        # gate_proj
+        packed_weights_gate = packed_weights["gate_proj"]
+        base_gate = QuantizedLinear.from_packed(
+            packed_weights_gate["weight_q"],
+            packed_weights_gate["scale"],
+            packed_weights_gate["row_min"],
+            packed_weights_gate["orig_in"],
+        )
+        mlp.gate_proj = LoRALinear(base=base_gate, r=r, alpha=alpha, dropout=dropout)
+
+        # down_proj
+        packed_weights_down = packed_weights["down_proj"]
+        base_down = QuantizedLinear.from_packed(
+            packed_weights_down["weight_q"],
+            packed_weights_down["scale"],
+            packed_weights_down["row_min"],
+            packed_weights_down["orig_in"],
+        )
+        mlp.down_proj = LoRALinear(base=base_down, r=r, alpha=alpha, dropout=dropout)
+
+        # up_proj
+        packed_weights_up = packed_weights["up_proj"]
+        base_up = QuantizedLinear.from_packed(
+            packed_weights_up["weight_q"],
+            packed_weights_up["scale"],
+            packed_weights_up["row_min"],
+            packed_weights_up["orig_in"],
+        )
+        mlp.up_proj = LoRALinear(base=base_up, r=r, alpha=alpha, dropout=dropout)
+
+        return mlp
+
+    @classmethod
+    def from_weights(cls, config, weights: dict):
+        """
+        Given weights dict, initialize the MistralMLP class with LoRALinear layers.
+
+        Inputs:
+                - config: MistralConfig
+                - weights: dict of weigths
+                    (e.g, weights["down_proj"] returns mx.array
+                    representing weights of the down projection)
+
+        Calls QuantizedLinear on weights then wraps it using LoRALinear
+        """
+        mlp = cls(config)
+        r = mlp.r
+        alpha = mlp.alpha
+        dropout = mlp.dropout
+
+        base_q = QuantizedLinear.convert_4bit(weights["gate_proj"], None)
+        mlp.gate_proj = LoRALinear(base=base_q, r=r, alpha=alpha, dropout=dropout)
+
+        base_k = QuantizedLinear.convert_4bit(weights["up_proj"], None)
+        mlp.up_proj = LoRALinear(base=base_k, r=r, alpha=alpha, dropout=dropout)
+
+        base_v = QuantizedLinear.convert_4bit(weights["down_proj"], None)
+        mlp.down_proj = LoRALinear(base=base_v, r=r, alpha=alpha, dropout=dropout)
+
+        return mlp
+
+    def _lora_or_linear(self, layer, x, use_lora: bool):
+        """
+        Runs the forward pass for a plain Linear/QuantizedLinear layer or with LoRALinear
+        """
+        try:
+            return layer(x, use_lora=use_lora)  # LoRA layer
+        except TypeError:
+            return layer(x)  # Linear or QuantizedLinear layer
+
+    def __call__(
+        self,
+        x: mx.array,
+        *,
+        use_lora: bool = True,
+    ):
+        """
+        Forward pass in the MLP block given an input x: mx.array.
+        Handles nn.Linear, QuantizationLinear and LoRALinear layers.
+        """
+
+        gate = self._lora_or_linear(self.gate_proj, x, use_lora=use_lora)
+        up = self._lora_or_linear(self.up_proj, x, use_lora=use_lora)
+
+        h = nn.silu(gate) * up
+        out = self._lora_or_linear(self.down_proj, h, use_lora=use_lora)
+
+        return out

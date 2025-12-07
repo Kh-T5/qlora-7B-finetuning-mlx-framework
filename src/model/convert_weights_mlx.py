@@ -27,7 +27,7 @@ def save_linear(
     filepath: str,
 ):
     if os.path.exists(filepath):
-        print(f"[skip] {file_path} already exists.")
+        print(f"[skip] {filepath} already exists.")
         return
 
     norm_t = norm_t.detach().to("cpu")
