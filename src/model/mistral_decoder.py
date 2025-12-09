@@ -1,6 +1,7 @@
 import mlx.nn as nn
 from src.model.model_utils import MistralMLP, MistralAttention, MistralConfig
 import mlx.core as mx
+from src.config import mistral_other_layers_quant_path
 import os
 import numpy as np
 
@@ -90,13 +91,15 @@ class MistralDecoderLayer(nn.Module):
         attn_mask: mx.array | None = None,
         positions: mx.array | None = None,
         cache: dict | None = None,
-        use_lora: bool = True,
+        use_lora: dict | bool = False,
     ):
         """
         Forward pass: Mirors forward pass of Hugging Face Mistral-7B
         x -> rms -> attention -> add residual -> rms -> mlp -> output
 
-        Also keeps trakc of cache (k, v proj in self attention)
+        - Keeps track of cache (k, v proj in self attention)
+        - attn_mask, = 0 | -inf, applied before softmax in attention head
+        - positions, called for RoPE
         """
 
         # Attention block
@@ -125,7 +128,7 @@ class MistralDecoder(nn.Module):
         self,
         config: MistralConfig,
         *,
-        decoder=MistralDecoderLayer,
+        decoder_layer=MistralDecoderLayer,
         attn=MistralAttention,
         mlp=MistralMLP,
         linear_cls=nn.Linear,
@@ -134,7 +137,7 @@ class MistralDecoder(nn.Module):
 
         self.num_layers = config.num_layers
         self.layers = [
-            decoder(config, attn_block=attn, mlp_block=mlp, linear_cls=linear_cls)
+            decoder_layer(config, attn_block=attn, mlp_block=mlp, linear_cls=linear_cls)
             for _ in range(self.num_layers)
         ]
 
@@ -213,6 +216,8 @@ class MistralDecoder(nn.Module):
                     weights_norm=weights_norm,
                 )
             )
+            with np.load(mistral_other_layers_quant_path) as data:
+                new_decoder.final_norm.weight = mx.array(data["norm_np"])
         return new_decoder
 
     def __call__(
@@ -222,7 +227,7 @@ class MistralDecoder(nn.Module):
         attn_mask: mx.array | None = None,
         caches: list[dict] | None = None,
         positions: mx.array | None = None,
-        use_lora: bool = True,
+        use_lora: dict | bool = False,
     ):
         if caches is None:
             caches = [None] * self.num_layers

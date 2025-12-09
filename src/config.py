@@ -14,7 +14,9 @@ mistral_other_layers_quant_path = (
 
 ### Model Params
 eps_rmsnorm = 1e-5
-hidden_size_atten = 4096
+embed_dim = 4096
+hidden_size_atten = 4096  # Also embedding dim
+vocab_size = 32000
 rms_norm_eps = 1e-5
 num_attention_heads = 32
 num_key_value_heads = 8
@@ -29,3 +31,12 @@ LoRA_r = 8
 alpha = 16
 epochs = 20
 dropout = 0.0
+lora_true = {
+    "k": True,
+    "v": True,
+    "q": False,
+    "o": False,
+    "gate": False,
+    "up": False,
+    "down": False,
+}
