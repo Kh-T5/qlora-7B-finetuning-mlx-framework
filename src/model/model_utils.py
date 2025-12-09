@@ -15,15 +15,22 @@ from src.config import (
     rope_theta,
     hidden_size_mlp,
     num_layers,
+    vocab_size,
+    embed_dim,
+    lora_true,
 )
 
 
 @dataclass
 class MistralConfig:
+    # Embedding
+    vocab_size: int = vocab_size
+    embed_dim: int = embed_dim
     ### LoRA
     alpha: float = alpha
     dropout: float = dropout
     r: int = LoRA_r
+    lora_true: dict = lora_true
     ### Attention
     hidden_size_atten: int = hidden_size_atten
     rms_norm_eps: float = rms_norm_eps
@@ -269,10 +276,12 @@ class MistralAttention(nn.Module):
         attn_mask: mx.array | None = None,
         cache: dict | None = None,
         positions: mx.array | None = None,
-        use_lora: bool = True,
+        use_lora: dict | bool = False,
     ):
         """
         x: (B, T, D)
+        use_lora:
+            dict, in the form of {"v": True, "k": True, "o": False, "q": False}.
         attn_mask:
             Optional, broadcastable to (B, 1, T, S),
             contains 0 for allowed, -inf for masked.
@@ -283,15 +292,13 @@ class MistralAttention(nn.Module):
         positions:
             Optional (T,) array of positions for RoPE.
             If None, uses range with offset from cache length.
-        use_lora:
-            If True and layers are LoRALinear, add LoRA adapters.
         """
         B, T, _ = x.shape
 
         # Linear proj
-        q = self._lora_or_linear(self.q_proj, x, use_lora=use_lora)
-        k = self._lora_or_linear(self.k_proj, x, use_lora=use_lora)
-        v = self._lora_or_linear(self.v_proj, x, use_lora=use_lora)
+        q = self._lora_or_linear(self.q_proj, x, use_lora=use_lora["q"])
+        k = self._lora_or_linear(self.k_proj, x, use_lora=use_lora["k"])
+        v = self._lora_or_linear(self.v_proj, x, use_lora=use_lora["v"])
 
         # Reshape intop heads for attention operations:
         q = self._shape_q(q)
@@ -318,10 +325,9 @@ class MistralAttention(nn.Module):
         new_cache = {"k": k, "v": v}
 
         # Expansion of k, v heads
-        k, v = self._expand_kv(k, v)  # (B, H_q, S, Dh)
-        S = k.shape[2]
+        k, v = self._expand_kv(k, v)
 
-        # Attention mechanism
+        # Attention mechanism [ Softmax(Q@K.T/scale ) ]
         scale = 1.0 / math.sqrt(self.head_dim)
         scores = mx.matmul(q, mx.transpose(k, (0, 1, 3, 2))) * scale
 
@@ -336,7 +342,7 @@ class MistralAttention(nn.Module):
         context = mx.transpose(context, (0, 2, 1, 3))
         context = context.reshape(B, T, self.hidden_size)
 
-        out = self._lora_or_linear(self.o_proj, context, use_lora)
+        out = self._lora_or_linear(self.o_proj, context, use_lora["o"])
 
         return out, new_cache
 
@@ -457,23 +463,23 @@ class MistralMLP(nn.Module):
         try:
             return layer(x, use_lora=use_lora)  # LoRA layer
         except TypeError:
-            return layer(x)  # Linear or QuantizedLinear layer
+            return layer(x)  # nn.Linear or QuantizedLinear layer
 
     def __call__(
         self,
         x: mx.array,
         *,
-        use_lora: bool = True,
+        use_lora: dict | bool = False,
     ):
         """
         Forward pass in the MLP block given an input x: mx.array.
         Handles nn.Linear, QuantizationLinear and LoRALinear layers.
         """
 
-        gate = self._lora_or_linear(self.gate_proj, x, use_lora=use_lora)
-        up = self._lora_or_linear(self.up_proj, x, use_lora=use_lora)
+        gate = self._lora_or_linear(self.gate_proj, x, use_lora=use_lora["gate"])
+        up = self._lora_or_linear(self.up_proj, x, use_lora=use_lora["up"])
 
         h = nn.silu(gate) * up
-        out = self._lora_or_linear(self.down_proj, h, use_lora=use_lora)
+        out = self._lora_or_linear(self.down_proj, h, use_lora=use_lora["down"])
 
         return out
