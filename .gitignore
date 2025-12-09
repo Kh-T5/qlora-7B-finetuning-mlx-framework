@@ -185,3 +185,6 @@ data/dolly_mistral7b_tokenized/
 data/quantized_mistral_7b/
 # Notebook used for experimenting
 notebook/test_notebook.ipynb
+
+# MacOS
+.DS_STORE
