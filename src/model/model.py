@@ -34,8 +34,8 @@ class MistralModel(nn.Module):
         new_model = cls(config)
         new_model.decoder = MistralDecoder.build_decoder_from_npz(config, dir_weights_q)
         with np.load(path_weights) as data:
-            new_model.embed.weight = mx.array(data["embed_np"])
-            weights_lm_head = mx.array(data["head_np"])
+            new_model.embed.weight = mx.array(data["embed_np"], dtype=mx.float16)
+            weights_lm_head = mx.array(data["head_np"], dtype=mx.float16)
         new_model.lm_head = QuantizedLinear.convert_4bit(weights_lm_head)
 
         return new_model
@@ -66,8 +66,18 @@ class MistralModel(nn.Module):
             - logits (B, T, vocab_size)
             - cache list[dict] of KV cache for each layer
         """
+        if isinstance(use_lora, bool):
+            use_lora = {
+                "q": use_lora,
+                "k": use_lora,
+                "v": use_lora,
+                "o": use_lora,
+                "gate": use_lora,
+                "up": use_lora,
+                "down": use_lora,
+            }
 
-        x = self.embed(input_ids)  # (B, T, D)
+        x = self.embed(input_ids).astype(mx.float16)  # (B, T, D)
 
         attn_mask = None
         if attention_mask is not None and caches is None:
@@ -78,7 +88,11 @@ class MistralModel(nn.Module):
             causal = mx.triu(causal, k=1)
             causal = causal[None, None, :, :]
 
-            pad = (1.0 - attention_mask.astype(mx.float32)) * float("-inf")
+            pad = mx.where(
+                attention_mask.astype(mx.bool_),
+                mx.array(0.0, dtype=mx.float16),
+                mx.array(float("-inf"), dtype=mx.float16),
+            )
             pad = pad[:, None, None, :]
 
             attn_mask = causal + pad
@@ -90,6 +104,6 @@ class MistralModel(nn.Module):
             positions=None,
             use_lora=use_lora,
         )
-        logits = self.lm_head(x)
+        logits = self.lm_head(x).astype(mx.float32)
 
         return logits, new_caches

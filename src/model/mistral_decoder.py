@@ -206,7 +206,7 @@ class MistralDecoder(nn.Module):
                 path = os.path.join(
                     dir, f"layer_{i:02d}_{name}_layernorm{sfx_no_quant}"
                 )
-                weights_norm[name] = mx.array(np.load(path))
+                weights_norm[name] = mx.array(np.load(path), dtype=mx.float16)
 
             new_decoder.layers.append(
                 MistralDecoderLayer.from_quantized_weights(
@@ -217,7 +217,9 @@ class MistralDecoder(nn.Module):
                 )
             )
             with np.load(mistral_other_layers_quant_path) as data:
-                new_decoder.final_norm.weight = mx.array(data["norm_np"])
+                new_decoder.final_norm.weight = mx.array(
+                    data["norm_np"], dtype=mx.float16
+                )
         return new_decoder
 
     def __call__(

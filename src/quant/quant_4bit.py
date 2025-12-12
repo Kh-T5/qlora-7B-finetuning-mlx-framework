@@ -16,7 +16,7 @@ def quantize_4bit_per_row(W: mx.array):
         origin_n_cols:  int, original number of columns (for dequantization)
     """
 
-    W = W.astype(mx.float32)
+    W = W.astype(mx.float16)
     n_rows, n_cols = W.shape
 
     # Computes min, max, scale
@@ -49,7 +49,11 @@ def quantize_4bit_per_row(W: mx.array):
 
 
 def dequantize_4bit_per_row(
-    quant_W: mx.array, scale: mx.array, row_min: mx.array, origin_n_cols: int
+    quant_W: mx.array,
+    scale: mx.array,
+    row_min: mx.array,
+    origin_n_cols: int,
+    dtype=mx.float16,
 ):
     """
     Dequantize weights from the packed 4-bit representation.
@@ -66,6 +70,10 @@ def dequantize_4bit_per_row(
     """
     n_rows, packed_cols = quant_W.shape
     # unpack two 4-bit values from each byte
+
+    if quant_W.dtype != mx.uint8:
+        quant_W = quant_W.astype(mx.uint8)
+
     mask = mx.array(0x0F, dtype=mx.uint8)
     hi = (quant_W >> 4) & mask
     lo = quant_W & mask
@@ -78,7 +86,7 @@ def dequantize_4bit_per_row(
 
     scale = scale[:, None]
     row_min = row_min[:, None]
-    W_approx = (
-        dequant_W.astype(mx.float32) * scale + row_min
+    W_approx = dequant_W.astype(dtype) * scale.astype(dtype) + row_min.astype(
+        dtype
     )  ## Approximation of previous W
     return W_approx
