@@ -1,9 +1,8 @@
 MODEL_NAME = "mistralai/Mistral-7B-v0.1"
-MAX_LENGTH = 128  # Max input length
 SEED = 42
 split_val = 0.1
 
-### Paths
+# Paths
 tokenized_ds_path = r"data/dolly_mistral7b_tokenized"
 Dataset_dolly = "databricks/databricks-dolly-15k"
 mistral_decoder_layers_quant_dir = r"data/quantized_mistral_7b/decoder_mlp_layers/"
@@ -11,8 +10,11 @@ mistral_other_layers_quant_path = (
     r"data/quantized_mistral_7b/other_layers/norm_embed_head.npz"
 )
 
+mistral_adapters_path = r"data/lora_adapters_mistral_7b/adapters.npz"
+training_results_dir = r"data/training_results/"
 
-### Model Params
+
+# Model Params
 eps_rmsnorm = 1e-5
 embed_dim = 4096
 hidden_size_atten = 4096  # Also embedding dim
@@ -24,17 +26,20 @@ head_dim = 128
 rope_theta = 1e4
 hidden_size_mlp = 14336
 num_layers = 32
+dropout = 0.05
 
 
-### Training aprams
+# Training Params
+MAX_LENGTH = 64
 LoRA_r = 8
+learning_rate = 1e-4
 alpha = 16
-epochs = 20
-dropout = 0.0
+batchsize = 2
+epochs = 3
 lora_true = {
     "k": True,
     "v": True,
-    "q": False,
+    "q": True,
     "o": False,
     "gate": False,
     "up": False,

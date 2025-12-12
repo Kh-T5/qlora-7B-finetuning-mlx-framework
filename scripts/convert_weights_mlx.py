@@ -65,7 +65,7 @@ def save_linear_quantized(
     weight_q, scale, row_min, orig_cols = quantize_4bit_per_row(W_mx)
 
     ### Weights saved as .npz --> need numpy array
-    weight_q_np = np.array(weight_q, copy=False)
+    weight_q_np = np.array(weight_q, copy=False, dtype=np.uint8)
     scale_np = np.array(scale, copy=False)
     row_min_np = np.array(row_min, copy=False)
     orig_in_np = np.int32(orig_cols)

@@ -25,6 +25,7 @@ class QuantizedLinear(nn.Module):
         out_features: int,
         *,
         bias: bool = True,
+        dtype=mx.float16
     ):
         super().__init__()
 
@@ -35,18 +36,18 @@ class QuantizedLinear(nn.Module):
 
         # init params
         self.quant_W = mx.zeros((out_features, packed_cols), dtype=mx.uint8)
-        self.scale = mx.ones((out_features,), dtype=mx.float32)
-        self.row_min = mx.zeros((out_features,), dtype=mx.float32)
+        self.scale = mx.ones((out_features,), dtype=dtype)
+        self.row_min = mx.zeros((out_features,), dtype=dtype)
         self.orig_in_features = in_features
 
         # init bias
         if bias:
-            self.bias = mx.zeros((out_features,), dtype=mx.float32)
+            self.bias = mx.zeros((out_features,), dtype=dtype)
         else:
             self.bias = None
 
     @classmethod
-    def convert_4bit(cls, weight: mx.array, bias) -> "QuantizedLinear":
+    def convert_4bit(cls, weight: mx.array, bias=None) -> "QuantizedLinear":
         """
         Convenience constructor from a full-precision weight matrix.
 
@@ -67,18 +68,13 @@ class QuantizedLinear(nn.Module):
         new_cls.orig_in_features = orig_cols
 
         if bias is not None:
-            new_cls.bias = bias.astype(mx.float32)
+            new_cls.bias = bias.astype(mx.float16)
 
         return new_cls
 
     @classmethod
     def from_packed(
-        cls,
-        quant_W,
-        scale,
-        row_min,
-        orig_in_features: int,
-        bias=None,
+        cls, quant_W, scale, row_min, orig_in_features: int, bias=None, dtype=mx.float16
     ) -> "QuantizedLinear":
         """
         Build directly from already-quantized weights
@@ -88,13 +84,14 @@ class QuantizedLinear(nn.Module):
             - scale, mx.array (out, ), dtype float
             - row_min, mx.array (out, ), dtype float
             - orig_in_features, int
+            - dtype, mx.float16, insures dequant/quant never returns float32
 
         returns QuantizedLinear initialiazed with provided quantized weights.
         """
         # Ensure we have MX arrays with correct dtypes
         quant_W = mx.array(quant_W, dtype=mx.uint8)
-        scale = mx.array(scale, dtype=mx.float32)
-        row_min = mx.array(row_min, dtype=mx.float32)
+        scale = mx.array(scale, dtype=dtype)
+        row_min = mx.array(row_min, dtype=dtype)
 
         out_features, _ = quant_W.shape
         in_features = int(orig_in_features)
@@ -107,7 +104,7 @@ class QuantizedLinear(nn.Module):
         new_cls.orig_in_features = in_features
 
         if bias is not None:
-            new_cls.bias = mx.array(bias, dtype=mx.float32)
+            new_cls.bias = mx.array(bias, dtype=dtype)
 
         return new_cls
 
@@ -123,6 +120,7 @@ class QuantizedLinear(nn.Module):
             self.scale,
             self.row_min,
             self.orig_in_features,
+            dtype=mx.float16,
         )
 
     def __call__(self, x: mx.array) -> mx.array:

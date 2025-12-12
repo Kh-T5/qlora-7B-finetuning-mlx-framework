@@ -188,3 +188,6 @@ notebook/test_notebook.ipynb
 
 # MacOS
 .DS_STORE
+
+#Debugging files
+scripts/debug.py 

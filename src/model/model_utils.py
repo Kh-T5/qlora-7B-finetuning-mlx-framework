@@ -1,5 +1,5 @@
 import mlx.nn as nn
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from src.quant.utils_linear import LoRALinear, QuantizedLinear
 import mlx.core as mx
 import math
@@ -30,7 +30,7 @@ class MistralConfig:
     alpha: float = alpha
     dropout: float = dropout
     r: int = LoRA_r
-    lora_true: dict = lora_true
+    lora_true: dict = field(default_factory=lambda: lora_true.copy())
     ### Attention
     hidden_size_atten: int = hidden_size_atten
     rms_norm_eps: float = rms_norm_eps
@@ -117,43 +117,54 @@ class MistralAttention(nn.Module):
 
         # q_proj
         packed_weights_q = packed_weights["q_proj"]
-        base_q = QuantizedLinear.from_packed(
+        attn.q_proj = QuantizedLinear.from_packed(
             packed_weights_q["weight_q"],
             packed_weights_q["scale"],
             packed_weights_q["row_min"],
             packed_weights_q["orig_in"],
         )
-        attn.q_proj = LoRALinear(base=base_q, r=r, alpha=alpha, dropout=dropout)
-
+        if config.lora_true["q"]:
+            attn.q_proj = LoRALinear.from_quantLinear(
+                base=attn.q_proj, r=r, alpha=alpha, dropout=dropout
+            )
         # v_proj
         packed_weights_v = packed_weights["v_proj"]
-        base_v = QuantizedLinear.from_packed(
+        attn.v_proj = QuantizedLinear.from_packed(
             packed_weights_v["weight_q"],
             packed_weights_v["scale"],
             packed_weights_v["row_min"],
             packed_weights_v["orig_in"],
         )
-        attn.v_proj = LoRALinear(base=base_v, r=r, alpha=alpha, dropout=dropout)
+        if config.lora_true["v"]:
+            attn.v_proj = LoRALinear.from_quantLinear(
+                base=attn.v_proj, r=r, alpha=alpha, dropout=dropout
+            )
 
         # k_proj
         packed_weights_k = packed_weights["k_proj"]
-        base_k = QuantizedLinear.from_packed(
+        attn.k_proj = QuantizedLinear.from_packed(
             packed_weights_k["weight_q"],
             packed_weights_k["scale"],
             packed_weights_k["row_min"],
             packed_weights_k["orig_in"],
         )
-        attn.k_proj = LoRALinear(base=base_k, r=r, alpha=alpha, dropout=dropout)
+        if config.lora_true["k"]:
+            attn.k_proj = LoRALinear.from_quantLinear(
+                base=attn.k_proj, r=r, alpha=alpha, dropout=dropout
+            )
 
         # o_proj
         packed_weights_o = packed_weights["o_proj"]
-        base_o = QuantizedLinear.from_packed(
+        attn.o_proj = QuantizedLinear.from_packed(
             packed_weights_o["weight_q"],
             packed_weights_o["scale"],
             packed_weights_o["row_min"],
             packed_weights_o["orig_in"],
         )
-        attn.o_proj = LoRALinear(base=base_o, r=r, alpha=alpha, dropout=dropout)
+        if config.lora_true["o"]:
+            attn.o_proj = LoRALinear.from_quantLinear(
+                base=attn.o_proj, r=r, alpha=alpha, dropout=dropout
+            )
 
         return attn
 
@@ -397,33 +408,42 @@ class MistralMLP(nn.Module):
 
         # gate_proj
         packed_weights_gate = packed_weights["gate_proj"]
-        base_gate = QuantizedLinear.from_packed(
+        mlp.gate_proj = QuantizedLinear.from_packed(
             packed_weights_gate["weight_q"],
             packed_weights_gate["scale"],
             packed_weights_gate["row_min"],
             packed_weights_gate["orig_in"],
         )
-        mlp.gate_proj = LoRALinear(base=base_gate, r=r, alpha=alpha, dropout=dropout)
+        if config.lora_true["gate"]:
+            mlp.gate_proj = LoRALinear.from_quantLinear(
+                base=mlp.gate_proj, r=r, alpha=alpha, dropout=dropout
+            )
 
         # down_proj
         packed_weights_down = packed_weights["down_proj"]
-        base_down = QuantizedLinear.from_packed(
+        mlp.down_proj = QuantizedLinear.from_packed(
             packed_weights_down["weight_q"],
             packed_weights_down["scale"],
             packed_weights_down["row_min"],
             packed_weights_down["orig_in"],
         )
-        mlp.down_proj = LoRALinear(base=base_down, r=r, alpha=alpha, dropout=dropout)
+        if config.lora_true["down"]:
+            mlp.down_proj = LoRALinear.from_quantLinear(
+                base=mlp.down_proj, r=r, alpha=alpha, dropout=dropout
+            )
 
         # up_proj
         packed_weights_up = packed_weights["up_proj"]
-        base_up = QuantizedLinear.from_packed(
+        mlp.up_proj = QuantizedLinear.from_packed(
             packed_weights_up["weight_q"],
             packed_weights_up["scale"],
             packed_weights_up["row_min"],
             packed_weights_up["orig_in"],
         )
-        mlp.up_proj = LoRALinear(base=base_up, r=r, alpha=alpha, dropout=dropout)
+        if config.lora_true["up"]:
+            mlp.up_proj = LoRALinear.from_quantLinear(
+                base=mlp.up_proj, r=r, alpha=alpha, dropout=dropout
+            )
 
         return mlp
 
