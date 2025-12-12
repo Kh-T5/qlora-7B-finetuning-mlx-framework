@@ -1,22 +1,101 @@
-Project: QLoRA Fine-Tuning of a msitral-7b on Databricks Dolly 15k
+# QLoRA Fine-Tuning of Mistral-7B on Databricks Dolly 15k
 
-Objective: Turn the base model into an instruction-following assistant using parameter-efficient fine-tuning on a human-written dataset.
+Parameter-efficient fine-tuning of **Mistral-7B** into an instruction-following assistant using **QLoRA** on Apple Silicon (MLX backend).
 
-Data: databricks/databricks-dolly-15k (15k prompt–response pairs, CC-BY-SA 3.0).
+---
 
+## Overview
 
-Method:
-    - QLoRA:
-        • Load base model in 4-bit quantization (Apple Silicon backend). 
-        • Insert LoRA adapters on attention projection layers. 
-    - Fine tuning:
-        • Supervised fine-tune on Dolly for a few epochs with small batch size.
-        • Save and optionally merge adapters into the base model.
+- **Base model:** `mistralai/Mistral-7B-v0.1`
+- **Task:** Turn a generic causal LM into a helpful, instruction-following assistant.
+- **Method:** 4-bit quantization + LoRA adapters (QLoRA) trained on human-written prompt–response pairs.
+- **Hardware target:** Apple Silicon (M-series) with MLX.
 
-Deliverables:
-• Training script 
-• Data prep script 
-• Inference script 
+---
 
+## Dataset
 
-Environmental dependencies can be found in "env.yml" & "requirements.txt" files
+- **Name:** `databricks/databricks-dolly-15k`
+- **Size:** ~15k high-quality prompt–response pairs
+- **License:** CC-BY-SA 3.0
+- **Format:** each example has:
+  - `instruction`
+  - `context` (optional)
+  - `response`
+
+The data prep pipeline tokenizes Dolly with the Mistral tokenizer and builds:
+
+- `input_ids`
+- `attention_mask`
+- `labels` (with `-100` masking for non-loss tokens)
+
+for use in language-model training.
+
+---
+
+## Method
+
+### Quantization + LoRA (QLoRA)
+
+- Load the pretrained Mistral-7B weights.
+- Apply **per-row 4-bit quantization** to the decoder linear layers:
+  - attention projections (`q_proj`, `k_proj`, `v_proj`, `o_proj`)
+  - MLP projections (`gate_proj`, `up_proj`, `down_proj`)
+- Implement a custom `QuantizedLinear` (4-bit) layer on top of MLX.
+- Wrap selected quantized layers with `LoRALinear`:
+  - low-rank adapters \(A \in \mathbb{R}^{d \times r}, B \in \mathbb{R}^{r \times d}\)
+  - only LoRA parameters are trainable; base weights stay frozen.
+
+### Supervised Fine-Tuning
+
+- Objective: standard next-token cross-entropy on Dolly responses.
+- Conditioning: `Instruction [+ Context] → Response` prompt format.
+- Training details (typical configuration):
+  - small batch size (fits in Apple Silicon unified memory)
+  - short to medium sequence length (e.g. 128 tokens)
+  - a few epochs over Dolly 15k
+  - AdamW optimizer over LoRA parameters only
+- Checkpoints:
+  - LoRA adapters saved separately so they can be:
+    - re-loaded on the quantized base model, or
+    - optionally merged back into full-precision weights for export.
+
+---
+
+## Repository Contents
+
+High-level layout (names may vary slightly):
+
+- `env.yml` – Conda environment specification.
+- `requirements.txt` – Python package requirements.
+- `src/`
+  - `model/`
+    - Mistral architecture in MLX (decoder, attention, MLP).
+    - `MistralForCausalLM` wrapper for training & inference.
+  - `quant/`
+    - 4-bit per-row quantization & dequantization utilities.
+    - Quantized + LoRA-wrapped linear layers.
+  - `data/`
+    - Dolly 15k download & preprocessing.
+    - MLX-friendly dataloader / batch iterator.
+  - `train/`
+    - QLoRA fine-tuning script and training utilities.
+  - `config.py` Contains all major parameters of the project
+- `scripts/`
+  - Script / utilities for:
+    - running the fine-tuned model
+    - training the model
+    - Tokenizing and saving data into (train/val)
+    - Saving pre-trained model weights
+
+---
+
+## Setup
+
+### 1. Create environment
+
+Using Conda:
+
+```bash
+conda env create -f env.yml
+conda activate qlora-mistral
