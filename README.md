@@ -43,8 +43,8 @@ for use in language-model training.
   - MLP projections (`gate_proj`, `up_proj`, `down_proj`)
 - Implement a custom `QuantizedLinear` (4-bit) layer on top of MLX.
 - Wrap selected quantized layers with `LoRALinear`:
-  - low-rank adapters \(A \in \mathbb{R}^{d \times r}, B \in \mathbb{R}^{r \times d}\)
-  - only LoRA parameters are trainable; base weights stay frozen.
+  - low-rank adapters `Matrix A (out, r) and Matrix B (r, in) with r low dimension`
+  - only LoRA parameters (adapters) are trainable; base weights stay frozen.
 
 ### Supervised Fine-Tuning
 
@@ -79,15 +79,14 @@ High-level layout (names may vary slightly):
     - Dolly 15k download & preprocessing.
     - MLX-friendly dataloader / batch iterator.
   - `train/`
-    - QLoRA fine-tuning script and training utilities.
+    - Training utilities.
   - `config.py` Contains all major parameters of the project
 - `scripts/`
   - Script / utilities for:
     - running the fine-tuned model
-    - training the model
+    - Script for fine-tuning the model
     - Tokenizing and saving data into (train/val)
-    - Saving pre-trained model weights
-
+    - Saving pre-trained model weights from Hugging Face
 ---
 
 ## Setup
