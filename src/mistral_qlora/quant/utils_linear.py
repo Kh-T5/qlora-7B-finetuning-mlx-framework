@@ -1,7 +1,10 @@
 import mlx.core as mx
 import mlx.nn as nn
 
-from src.quant.quant_4bit import dequantize_4bit_per_row, quantize_4bit_per_row
+from mistral_qlora.quant.quant_4bit import (
+    dequantize_4bit_per_row,
+    quantize_4bit_per_row,
+)
 
 
 class QuantizedLinear(nn.Module):
@@ -79,7 +82,7 @@ class QuantizedLinear(nn.Module):
     ) -> "QuantizedLinear":
         """
         Build directly from already-quantized weights
-        Adapted to the way weights was saved -> src.model.convert_weights_mlx
+        Adapted to the way weights was saved -> mistral_qlora.model.convert_weights_mlx
         Given saved quantized weights:
             - quant_W, mx.array (out, in), dtype mx.uint8
             - scale, mx.array (out, ), dtype float

@@ -5,12 +5,12 @@ import numpy as np
 import torch
 from transformers import AutoModelForCausalLM
 
-from src.config import (
+from mistral_qlora.config import (
     MODEL_NAME,
     mistral_decoder_layers_quant_dir,
     mistral_other_layers_quant_path,
 )
-from src.quant.quant_4bit import quantize_4bit_per_row
+from mistral_qlora.quant.quant_4bit import quantize_4bit_per_row
 
 
 def torch_to_mx_array(tensor: torch.Tensor) -> mx.array:

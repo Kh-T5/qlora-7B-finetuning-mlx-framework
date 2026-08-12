@@ -2,8 +2,8 @@
 
 import mlx.core as mx
 
-from src.model.mistral_decoder import MistralDecoder, MistralDecoderLayer
-from src.model.model_utils import MistralMLP
+from mistral_qlora.model.mistral_decoder import MistralDecoder, MistralDecoderLayer
+from mistral_qlora.model.model_utils import MistralMLP
 
 
 def test_mlp_preserves_the_input_width(tiny_config, packed_mlp, use_lora_off):

@@ -1,7 +1,7 @@
 from datasets import load_dataset
 from transformers import AutoTokenizer
 
-from src.config import (
+from mistral_qlora.config import (
     MAX_LENGTH,
     MODEL_NAME,
     SEED,

@@ -3,8 +3,11 @@
 import mlx.core as mx
 import pytest
 
-from src.quant.quant_4bit import dequantize_4bit_per_row, quantize_4bit_per_row
-from src.quant.utils_linear import LoRALinear, QuantizedLinear
+from mistral_qlora.quant.quant_4bit import (
+    dequantize_4bit_per_row,
+    quantize_4bit_per_row,
+)
+from mistral_qlora.quant.utils_linear import LoRALinear, QuantizedLinear
 
 
 def test_roundtrip_error_is_bounded_by_step_size():

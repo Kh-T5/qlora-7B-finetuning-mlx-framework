@@ -2,8 +2,8 @@ import mlx.core as mx
 import mlx.nn as nn
 from mlx.utils import tree_flatten
 
-from src.model.model_wrapper import MistralForCausalLM
-from src.quant.utils_linear import LoRALinear
+from mistral_qlora.model.model_wrapper import MistralForCausalLM
+from mistral_qlora.quant.utils_linear import LoRALinear
 
 
 def make_lora_only_trainable(model: MistralForCausalLM):

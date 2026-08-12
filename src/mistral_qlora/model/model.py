@@ -2,9 +2,9 @@ import mlx.core as mx
 import mlx.nn as nn
 import numpy as np
 
-from src.model.mistral_decoder import MistralDecoder, MistralDecoderLayer
-from src.model.model_utils import MistralAttention, MistralConfig, MistralMLP
-from src.quant.utils_linear import QuantizedLinear
+from mistral_qlora.model.mistral_decoder import MistralDecoder, MistralDecoderLayer
+from mistral_qlora.model.model_utils import MistralAttention, MistralConfig, MistralMLP
+from mistral_qlora.quant.utils_linear import QuantizedLinear
 
 
 class MistralModel(nn.Module):

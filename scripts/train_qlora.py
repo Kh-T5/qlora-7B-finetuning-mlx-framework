@@ -6,7 +6,7 @@ import mlx.nn as nn
 import mlx.optimizers as optim
 import numpy as np
 
-from src.config import (
+from mistral_qlora.config import (
     MAX_LENGTH,
     batchsize,
     epochs,
@@ -18,11 +18,11 @@ from src.config import (
     tokenized_ds_path,
     training_results_dir,
 )
-from src.data.adapters import load_lora_adapters, save_lora_adapters
-from src.data.data_loader_mlx import batch_iter, load_tokenized
-from src.model.model_utils import MistralConfig
-from src.model.model_wrapper import MistralForCausalLM
-from src.train.train_utils import *
+from mistral_qlora.data.adapters import load_lora_adapters, save_lora_adapters
+from mistral_qlora.data.data_loader_mlx import batch_iter, load_tokenized
+from mistral_qlora.model.model_utils import MistralConfig
+from mistral_qlora.model.model_wrapper import MistralForCausalLM
+from mistral_qlora.train.train_utils import *
 
 # --------------------- Eval func ---------------------------
 

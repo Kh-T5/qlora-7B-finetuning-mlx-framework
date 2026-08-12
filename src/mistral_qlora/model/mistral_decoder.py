@@ -4,8 +4,8 @@ import mlx.core as mx
 import mlx.nn as nn
 import numpy as np
 
-from src.config import mistral_other_layers_quant_path
-from src.model.model_utils import MistralAttention, MistralConfig, MistralMLP
+from mistral_qlora.config import mistral_other_layers_quant_path
+from mistral_qlora.model.model_utils import MistralAttention, MistralConfig, MistralMLP
 
 
 class MistralDecoderLayer(nn.Module):

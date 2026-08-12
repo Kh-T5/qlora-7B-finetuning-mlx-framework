@@ -1,8 +1,8 @@
 import mlx.core as mx
 import mlx.nn as nn
 
-from src.model.model import MistralModel
-from src.model.model_utils import MistralConfig
+from mistral_qlora.model.model import MistralModel
+from mistral_qlora.model.model_utils import MistralConfig
 
 
 class MistralForCausalLM(nn.Module):

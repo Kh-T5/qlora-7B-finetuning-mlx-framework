@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 import mlx.core as mx
 import mlx.nn as nn
 
-from src.config import (
+from mistral_qlora.config import (
     LoRA_r,
     alpha,
     dropout,
@@ -20,7 +20,7 @@ from src.config import (
     rope_theta,
     vocab_size,
 )
-from src.quant.utils_linear import LoRALinear, QuantizedLinear
+from mistral_qlora.quant.utils_linear import LoRALinear, QuantizedLinear
 
 
 @dataclass

@@ -34,10 +34,16 @@ dev = [
     "ty==0.0.70", # pre-1.0, pinned exactly; non-blocking in CI
 ]
 
-[tool.uv]
-# Virtual project: uv manages the environment but does not install this source tree
-# as a package. Flipped to a real src-layout package in CS3.
-package = false
+[build-system]
+requires = ["uv_build>=0.9,<0.20"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+# src-layout: the package is importable only once installed, never by accident
+# from the working tree. That is what removes the "must run from the repo root"
+# constraint the old top-level `src` package imposed.
+module-name = "mistral_qlora"
+module-root = "src"
 
 [tool.pytest.ini_options]
 testpaths = ["test"]

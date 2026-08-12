@@ -9,7 +9,7 @@ import mlx.core as mx
 import mlx.nn as nn
 from mlx.utils import tree_flatten
 
-from src.train.train_utils import lm_loss_fn, make_lora_only_trainable
+from mistral_qlora.train.train_utils import lm_loss_fn, make_lora_only_trainable
 
 
 def _grads(model, batch, use_lora):

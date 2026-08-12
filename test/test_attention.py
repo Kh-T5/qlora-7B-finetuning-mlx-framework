@@ -2,7 +2,7 @@
 
 import mlx.core as mx
 
-from src.model.model_utils import MistralAttention
+from mistral_qlora.model.model_utils import MistralAttention
 
 
 def test_forward_shapes_and_cache(tiny_config, packed_attn, use_lora_off):

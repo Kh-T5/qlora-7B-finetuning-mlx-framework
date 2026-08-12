@@ -2,7 +2,7 @@
 
 import mlx.core as mx
 
-from src.train.train_utils import batch_token_loss_and_count
+from mistral_qlora.train.train_utils import batch_token_loss_and_count
 
 
 def test_forward_returns_vocab_logits(tiny_model, tiny_config, batch, use_lora_off):

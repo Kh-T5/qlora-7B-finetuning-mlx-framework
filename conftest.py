@@ -10,9 +10,9 @@ import mlx.core as mx
 import numpy as np
 import pytest
 
-from src.model.model_utils import MistralConfig
-from src.model.model_wrapper import MistralForCausalLM
-from src.quant.quant_4bit import quantize_4bit_per_row
+from mistral_qlora.model.model_utils import MistralConfig
+from mistral_qlora.model.model_wrapper import MistralForCausalLM
+from mistral_qlora.quant.quant_4bit import quantize_4bit_per_row
 
 ATTN_PROJECTIONS = ("q_proj", "k_proj", "v_proj", "o_proj")
 MLP_PROJECTIONS = ("gate_proj", "up_proj", "down_proj")
@@ -174,7 +174,7 @@ def checkpoint_dir(tmp_path, tiny_config, monkeypatch):
     )
 
     monkeypatch.setattr(
-        "src.model.mistral_decoder.mistral_other_layers_quant_path",
+        "mistral_qlora.model.mistral_decoder.mistral_other_layers_quant_path",
         str(other_path),
     )
     return {"layers_dir": str(layers_dir), "other_path": str(other_path)}
