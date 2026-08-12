@@ -10,7 +10,8 @@ mistral_other_layers_quant_path = (
     r"data/quantized_mistral_7b/other_layers/norm_embed_head.npz"
 )
 
-mistral_adapters_path = r"data/lora_adapters_mistral_7b/adapters.npz"
+mistral_adapters_path_current = r"data/lora_adapters_mistral_7b/adapters_1.npz"
+mistral_adapters_path_next = r"data/lora_adapters_mistral_7b/adapters_2.npz"
 training_results_dir = r"data/training_results/"
 
 
@@ -30,11 +31,11 @@ dropout = 0.05
 
 
 # Training Params
-MAX_LENGTH = 64
+MAX_LENGTH = 128
 LoRA_r = 8
 learning_rate = 1e-4
 alpha = 16
-batchsize = 2
+batchsize = 8
 epochs = 3
 lora_true = {
     "k": True,

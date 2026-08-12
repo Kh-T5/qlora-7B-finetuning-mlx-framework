@@ -12,10 +12,7 @@ def save_lora_adapters(model, path: str):
 
     arrays_dict = {}
     for key_path, arr in flat:
-        parts = [str(p) for p in key_path]
-        name = ".".join(parts)
-        arrays_dict[name] = arr
-
+        arrays_dict[key_path] = arr
     mx.savez(path, **arrays_dict)
 
 

@@ -10,23 +10,21 @@ def make_lora_only_trainable(model: MistralForCausalLM):
     Freeze everything, then unfreeze ONLY LoRA adapter params (lora_A, lora_B)
     inside each LoRALinear.
     """
-    # 1) Freeze the whole tree
     model.freeze(recurse=True)
 
-    # 2) For each LoRALinear, unfreeze its A/B submodules
+    # For each LoRALinear, unfreeze its A/B submodules
     def unfreeze_lora(prefix, mod: nn.Module):
         if isinstance(mod, LoRALinear):
             # Make extra sure the base stays frozen
             if hasattr(mod, "base"):
                 mod.base.freeze(recurse=True)
-
             # Unfreeze lora_A and lora_B fully (their weights)
             if hasattr(mod, "lora_A"):
                 mod.lora_A.unfreeze(recurse=True)
-            if hasattr(mod, "lora_B"):
                 mod.lora_B.unfreeze(recurse=True)
 
     model.apply_to_modules(unfreeze_lora)
+
     n_total = sum(v.size for _, v in tree_flatten(model.parameters()))
     n_train = sum(v.size for _, v in tree_flatten(model.trainable_parameters()))
     print(
