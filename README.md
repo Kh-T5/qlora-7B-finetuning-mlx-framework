@@ -66,8 +66,8 @@ for use in language-model training.
 
 High-level layout (names may vary slightly):
 
-- `env.yml` – Conda environment specification.
-- `requirements.txt` – Python package requirements.
+- `pyproject.toml` / `uv.lock` – dependencies and pinned environment (uv).
+- `ROADMAP.md` – project direction, known issues, decision log.
 - `src/`
   - `model/`
     - Mistral architecture in MLX (decoder, attention, MLP).
@@ -91,10 +91,40 @@ High-level layout (names may vary slightly):
 
 ## Setup
 
-### 1. Create environment
+Requires Apple Silicon and Python 3.12. Dependencies are managed with
+[uv](https://docs.astral.sh/uv/).
 
-Using Conda:
+### 1. Environment
 
 ```bash
-conda env create -f env.yml
-conda activate qlora-mistral
+uv sync
+```
+
+Training needs only `mlx`, `numpy` and `datasets`. The one-time preprocessing steps
+(HF weight download + 4-bit conversion, and Dolly tokenization) additionally need
+`torch` and `transformers`, kept out of the default install:
+
+```bash
+uv sync --extra convert
+```
+
+### 2. Prepare data and weights (one-time)
+
+```bash
+uv run python scripts/prepare_data.py
+uv run python scripts/convert_weights_mlx.py
+```
+
+### 3. Train
+
+```bash
+uv run python scripts/train_qlora.py
+```
+
+### Development
+
+```bash
+uv run pytest -m "not slow"
+uv run ruff check && uv run ruff format --check
+uv run pre-commit install
+```

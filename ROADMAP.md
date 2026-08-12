@@ -88,11 +88,24 @@ MLP projections), so a single outlier inflates the range for every weight in the
 are written in one file and re-read in two others that never reference it. Adapters carry no
 metadata at all — no `r`, `alpha`, target projections or dtype. → CS8
 
+**B8 — `use_lora` defaults to `False` but is indexed as a dict.**
+`MistralAttention.__call__` and `MistralMLP.__call__` declare `use_lora: dict | bool = False`
+then do `use_lora["q"]` unconditionally. Only `MistralModel.__call__` normalizes bool → dict,
+so calling either module directly with the default raises
+`TypeError: 'bool' object is not subscriptable`. The modules are untestable in isolation
+without passing an explicit dict. → CS5
+
+**The test suite is red at `main` and has been.** 8 of 9 tests fail, 7 of them on B8 —
+verified by running `git archive HEAD` in a clean directory, so this pre-dates the refactor.
+Consequence for CS2: characterization tests cannot "lock in current behaviour" where current
+behaviour is a crash. CS2 writes tests that pass an explicit `use_lora` dict (which the
+rewritten tests do naturally); CS5 fixes B8 and adds coverage for the bool path.
+
 ---
 
 ## Plan
 
-Detail lives in [`docs/REFACTOR-PLAN.md`](docs/REFACTOR-PLAN.md) (added in CS1).
+Each item is one atomic commit. A pass is one branch and one PR.
 
 ### Axis 1 — land existing work
 
@@ -100,8 +113,8 @@ Detail lives in [`docs/REFACTOR-PLAN.md`](docs/REFACTOR-PLAN.md) (added in CS1).
 
 ### Axis 2 — Pass 1: clean + modernize (zero behaviour change)
 
-- [ ] **CS1** — uv, `pyproject.toml`, ruff, pre-commit, `ty`, `CLAUDE.md`
-- [ ] **CS2** — pytest foundation + CI on `macos-14`
+- [x] **CS1** — uv, `pyproject.toml`, ruff, pre-commit, `ty`, `CLAUDE.md`
+- [ ] **CS2** — pytest foundation + CI on `macos-14` (must work around B8; see above)
 - [ ] **CS3** — src-layout rename to `mistral_qlora/`
 - [ ] **CS4** — dead code removal
 - [ ] **CS5** — delete `_lora_or_linear` (B3)
@@ -161,5 +174,6 @@ Recorded so they are not re-litigated. Add to this table rather than rewriting h
 
 - **No binaries in git.** The repo is 61 KB. Checkpoints, adapters and datasets are gitignored.
 - **No git writes by agents.** Agents prepare file changes; a human stages, commits and pushes.
-- One change set = one PR.
+- **Conventional Commits**, atomic — one logical change per commit.
+- One change set = one commit. One pass = one branch (`<type>/<kebab-description>`) = one PR.
 - Update this file as part of the change set, not afterwards.
