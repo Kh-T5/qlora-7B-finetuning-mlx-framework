@@ -95,6 +95,13 @@ so calling either module directly with the default raises
 `TypeError: 'bool' object is not subscriptable`. The modules are untestable in isolation
 without passing an explicit dict. → CS5
 
+**B9 — The quantizer's `eps` floor underflows to zero in float16.**
+`quantize_4bit_per_row` casts to fp16, then guards with `scale = mx.maximum(scale, 1e-8)`.
+But `1e-8` is below fp16's smallest subnormal (~6e-8), so it *is* `0.0` — the guard is a no-op.
+Any row whose range is under ~1e-6 gets `scale = 0`, and `(W - row_min) / scale` becomes
+`0/0`. It does not raise: the NaN packs to zeros, so the row silently quantizes to garbage.
+Found by the CS2 suite; covered by an `xfail(strict=True)` that flips green when fixed. → CS12
+
 **The test suite is red at `main` and has been.** 8 of 9 tests fail, 7 of them on B8 —
 verified by running `git archive HEAD` in a clean directory, so this pre-dates the refactor.
 Consequence for CS2: characterization tests cannot "lock in current behaviour" where current
@@ -114,7 +121,7 @@ Each item is one atomic commit. A pass is one branch and one PR.
 ### Axis 2 — Pass 1: clean + modernize (zero behaviour change)
 
 - [x] **CS1** — uv, `pyproject.toml`, ruff, pre-commit, `ty`, `CLAUDE.md`
-- [ ] **CS2** — pytest foundation + CI on `macos-14` (must work around B8; see above)
+- [x] **CS2** — pytest foundation + CI on `macos-14` (31 tests, hermetic, 0.3s)
 - [ ] **CS3** — src-layout rename to `mistral_qlora/`
 - [ ] **CS4** — dead code removal
 - [ ] **CS5** — delete `_lora_or_linear` (B3)

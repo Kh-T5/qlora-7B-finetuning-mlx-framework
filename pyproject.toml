@@ -39,6 +39,13 @@ dev = [
 # as a package. Flipped to a real src-layout package in CS3.
 package = false
 
+[tool.pytest.ini_options]
+testpaths = ["test"]
+addopts = "-ra --strict-markers"
+markers = [
+    "slow: needs the real Mistral-7B weights or a Hugging Face download (excluded from CI)",
+]
+
 [tool.ruff]
 line-length = 88 # matches the existing black-formatted code
 target-version = "py312"
