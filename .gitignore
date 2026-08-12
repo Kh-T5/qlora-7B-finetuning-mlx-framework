@@ -190,4 +190,12 @@ notebook/test_notebook.ipynb
 .DS_STORE
 
 #Debugging files
-scripts/debug.py 
+debug/*
+
+# Training artifacts and checkpoints (never commit binaries)
+data/lora_adapters_mistral_7b/
+data/test/
+data/training_results/
+
+# Local-only agent working agreement
+CLAUDE.md

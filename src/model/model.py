@@ -81,7 +81,7 @@ class MistralModel(nn.Module):
 
         attn_mask = None
         if attention_mask is not None and caches is None:
-            # Training case, we not keep track of caches
+            # Training case, we do not keep track of caches
             B, T = attention_mask.shape
 
             causal = mx.full((T, T), float("-inf"))

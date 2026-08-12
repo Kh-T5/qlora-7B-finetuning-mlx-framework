@@ -9,7 +9,7 @@ from src.model.model_wrapper import MistralForCausalLM
 from src.train.train_utils import *
 from src.model.model_utils import MistralConfig
 from src.data.data_loader_mlx import batch_iter, load_tokenized
-from src.data.adapters import save_lora_adapters
+from src.data.adapters import save_lora_adapters, load_lora_adapters
 
 
 from src.config import (
@@ -18,9 +18,11 @@ from src.config import (
     epochs,
     mistral_decoder_layers_quant_dir,
     mistral_other_layers_quant_path,
-    mistral_adapters_path,
+    mistral_adapters_path_next,
+    mistral_adapters_path_current,
     tokenized_ds_path,
     training_results_dir,
+    MAX_LENGTH,
 )
 
 
@@ -118,22 +120,30 @@ def train_qlora(
             global_step += 1
 
             # Forward + backward
+            tok_per_ex = mx.sum(batch["attention_mask"], axis=1)
+            sup_per_ex = mx.sum(
+                batch["labels"] != -100, axis=1
+            )  # if you use -100 ignore
+            mx.eval(tok_per_ex, sup_per_ex)
+            print("tok_per_ex:", tok_per_ex.tolist())
+            print("sup_per_ex:", sup_per_ex.tolist())
+
             loss, grads = loss_and_grad(model, batch, lora_true)
             opt.update(model, grads)
             mx.eval(model.parameters(), opt.state, loss)
             loss_train_history.append(loss.item())
 
-            if global_step % 5 == 0:
+            if global_step % 1 == 0:
                 print(
                     f"epoch {epoch+1} step {step_in_epoch+1}/{steps_per_epoch} "
                     f"global_step {global_step}: loss={loss.item():.4f}"
                 )
 
-            if global_step % 200 == 0:
+            if global_step % 500 == 0:
                 val_loss, val_ppl = evaluate_perplexity(
                     model,
                     tokenized_ds_path=tokenized_ds_path,
-                    batch_size=batch_size,
+                    batch_size=(4 * batch_size),
                     loaded_ds=val_ds,
                     use_lora=lora_true,
                 )
@@ -141,15 +151,18 @@ def train_qlora(
                 ppl_val_history.append(val_ppl)
                 loss_val_history.append(val_loss)
 
-            if global_step % 2000 == 0:
-                save_lora_adapters(model, mistral_adapters_path)
+                save_lora_adapters(model, mistral_adapters_path_next)
 
     return loss_train_history, loss_val_history, ppl_val_history
 
 
 if __name__ == "__main__":
 
+    # --------------------- Init model & config ---------------------
     mistral_config = MistralConfig()
+    print(
+        f"Mistral Config : \n - Length input: {MAX_LENGTH}\n - Batchsize: {batchsize}\n - Activated LoRA: {mistral_config.lora_true}"
+    )
     print("Loading model..")
     model = MistralForCausalLM.from_mistral_7b(
         mistral_config,
@@ -157,9 +170,20 @@ if __name__ == "__main__":
         mistral_other_layers_quant_path,
     )
     print("Model loaded.")
+
+    # --------------------- Loads saved adapters. ---------------------
+    if os.path.exists(mistral_adapters_path_current):
+        load_lora_adapters(model, mistral_adapters_path_current)
+        print("Loaded saved adapters.")
+
+    # --------------------- Fine tuning model ---------------------
     loss_train_history, loss_val_history, ppl_val_history = train_qlora(
         model, lora_true=mistral_config.lora_true
     )
+    save_lora_adapters(model, mistral_adapters_path_next)
+    print("Saved new adapters.")
+
+    # --------------------- Saving train / val loss - Val perplexity ---------------------
     path = os.path.join(training_results_dir, "Tier1.npz")
     np.savez(
         path,
@@ -167,5 +191,5 @@ if __name__ == "__main__":
         val_loss=np.array(loss_val_history),
         val_ppl=np.array(ppl_val_history),
     )
-    save_lora_adapters(model, mistral_adapters_path)
+
     print("Done.")
