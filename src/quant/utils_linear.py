@@ -1,6 +1,7 @@
 import mlx.core as mx
 import mlx.nn as nn
-from src.quant.quant_4bit import quantize_4bit_per_row, dequantize_4bit_per_row
+
+from src.quant.quant_4bit import dequantize_4bit_per_row, quantize_4bit_per_row
 
 
 class QuantizedLinear(nn.Module):
@@ -25,7 +26,7 @@ class QuantizedLinear(nn.Module):
         out_features: int,
         *,
         bias: bool = True,
-        dtype=mx.float16
+        dtype=mx.float16,
     ):
         super().__init__()
 

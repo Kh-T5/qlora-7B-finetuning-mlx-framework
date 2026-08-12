@@ -1,8 +1,9 @@
-import mlx.nn as nn
 import mlx.core as mx
+import mlx.nn as nn
+from mlx.utils import tree_flatten
+
 from src.model.model_wrapper import MistralForCausalLM
 from src.quant.utils_linear import LoRALinear
-from mlx.utils import tree_flatten
 
 
 def make_lora_only_trainable(model: MistralForCausalLM):
@@ -28,8 +29,8 @@ def make_lora_only_trainable(model: MistralForCausalLM):
     n_total = sum(v.size for _, v in tree_flatten(model.parameters()))
     n_train = sum(v.size for _, v in tree_flatten(model.trainable_parameters()))
     print(
-        f"Total params: {n_total/1e6:.3f}M, "
-        f"trainable LoRA params: {n_train/1e6:.3f}M"
+        f"Total params: {n_total / 1e6:.3f}M, "
+        f"trainable LoRA params: {n_train / 1e6:.3f}M"
     )
 
 

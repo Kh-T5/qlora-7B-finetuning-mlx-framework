@@ -1,14 +1,14 @@
 from datasets import load_dataset
 from transformers import AutoTokenizer
-from src.config import (
-    MODEL_NAME,
-    MAX_LENGTH,
-    Dataset_dolly,
-    tokenized_ds_path,
-    SEED,
-    split_val,
-)
 
+from src.config import (
+    MAX_LENGTH,
+    MODEL_NAME,
+    SEED,
+    Dataset_dolly,
+    split_val,
+    tokenized_ds_path,
+)
 
 ### Init tokenizer
 tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME, use_fast=True)
@@ -94,7 +94,6 @@ def preprocess_batch(batch):
 
 
 if __name__ == "__main__":
-
     print("Loading dataset...")
     dolly_ds = load_dataset(Dataset_dolly)["train"]
 

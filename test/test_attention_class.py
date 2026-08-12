@@ -1,6 +1,5 @@
-import math
 import mlx.core as mx
-import mlx.nn as nn
+
 from src.model.model_utils import MistralAttention, MistralConfig
 
 

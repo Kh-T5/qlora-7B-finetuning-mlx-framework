@@ -1,6 +1,5 @@
-from src.data.data_loader_mlx import load_tokenized, batch_iter
-from src.config import tokenized_ds_path 
-
+from src.config import tokenized_ds_path
+from src.data.data_loader_mlx import batch_iter, load_tokenized
 
 if __name__ == "__main__":
     ds_train = load_tokenized("train", tokenized_ds_path)

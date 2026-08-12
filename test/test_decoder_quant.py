@@ -1,19 +1,20 @@
 import os
 import tempfile
-import numpy as np
-import mlx.core as mx
 
-from src.quant.quant_4bit import quantize_4bit_per_row
-from src.quant.utils_linear import QuantizedLinear
+import mlx.core as mx
+import numpy as np
+
+from src.model.mistral_decoder import (
+    MistralDecoder,
+    MistralDecoderLayer,
+)
 from src.model.model_utils import (
-    MistralConfig,
     MistralAttention,
+    MistralConfig,
     MistralMLP,
 )
-from src.model.mistral_decoder import (
-    MistralDecoderLayer,
-    MistralDecoder,
-)
+from src.quant.quant_4bit import quantize_4bit_per_row
+from src.quant.utils_linear import QuantizedLinear
 
 
 def make_tiny_config() -> MistralConfig:

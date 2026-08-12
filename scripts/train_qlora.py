@@ -1,30 +1,28 @@
-import mlx.nn as nn
-import mlx.core as mx
-import mlx.optimizers as optim
 import math
-import numpy as np
 import os
 
-from src.model.model_wrapper import MistralForCausalLM
-from src.train.train_utils import *
-from src.model.model_utils import MistralConfig
-from src.data.data_loader_mlx import batch_iter, load_tokenized
-from src.data.adapters import save_lora_adapters, load_lora_adapters
-
+import mlx.core as mx
+import mlx.nn as nn
+import mlx.optimizers as optim
+import numpy as np
 
 from src.config import (
-    learning_rate,
+    MAX_LENGTH,
     batchsize,
     epochs,
+    learning_rate,
+    mistral_adapters_path_current,
+    mistral_adapters_path_next,
     mistral_decoder_layers_quant_dir,
     mistral_other_layers_quant_path,
-    mistral_adapters_path_next,
-    mistral_adapters_path_current,
     tokenized_ds_path,
     training_results_dir,
-    MAX_LENGTH,
 )
-
+from src.data.adapters import load_lora_adapters, save_lora_adapters
+from src.data.data_loader_mlx import batch_iter, load_tokenized
+from src.model.model_utils import MistralConfig
+from src.model.model_wrapper import MistralForCausalLM
+from src.train.train_utils import *
 
 # --------------------- Eval func ---------------------------
 
@@ -112,7 +110,7 @@ def train_qlora(
 
     global_step = 0
     for epoch in range(epochs):
-        print(f"\n=== Epoch {epoch+1}/{epochs} ===")
+        print(f"\n=== Epoch {epoch + 1}/{epochs} ===")
 
         for step_in_epoch, batch in enumerate(
             batch_iter(train_ds, batch_size, shuffle=True)
@@ -135,7 +133,7 @@ def train_qlora(
 
             if global_step % 1 == 0:
                 print(
-                    f"epoch {epoch+1} step {step_in_epoch+1}/{steps_per_epoch} "
+                    f"epoch {epoch + 1} step {step_in_epoch + 1}/{steps_per_epoch} "
                     f"global_step {global_step}: loss={loss.item():.4f}"
                 )
 
@@ -157,7 +155,6 @@ def train_qlora(
 
 
 if __name__ == "__main__":
-
     # --------------------- Init model & config ---------------------
     mistral_config = MistralConfig()
     print(

@@ -1,9 +1,11 @@
-import mlx.nn as nn
-from src.model.model_utils import MistralMLP, MistralAttention, MistralConfig
-import mlx.core as mx
-from src.config import mistral_other_layers_quant_path
 import os
+
+import mlx.core as mx
+import mlx.nn as nn
 import numpy as np
+
+from src.config import mistral_other_layers_quant_path
+from src.model.model_utils import MistralAttention, MistralConfig, MistralMLP
 
 
 class MistralDecoderLayer(nn.Module):
@@ -175,7 +177,6 @@ class MistralDecoder(nn.Module):
         new_decoder.layers = []
 
         for i in range(config.num_layers):
-
             # Load attention quantized weights
             packed_weights_attn = {}
             for name in names_attn:

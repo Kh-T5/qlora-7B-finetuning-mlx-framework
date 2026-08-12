@@ -1,14 +1,16 @@
 import os
+
+import mlx.core as mx
 import numpy as np
 import torch
 from transformers import AutoModelForCausalLM
-import mlx.core as mx
-from src.quant.quant_4bit import quantize_4bit_per_row
+
 from src.config import (
     MODEL_NAME,
-    mistral_other_layers_quant_path,
     mistral_decoder_layers_quant_dir,
+    mistral_other_layers_quant_path,
 )
+from src.quant.quant_4bit import quantize_4bit_per_row
 
 
 def torch_to_mx_array(tensor: torch.Tensor) -> mx.array:
@@ -172,9 +174,9 @@ def main():
             os.path.join(mistral_decoder_layers_quant_dir, f"{layer_tag}.npy"), w_np
         )
 
-    weight_embed = sd[f"model.embed_tokens.weight"]
-    weight_norm = sd[f"model.norm.weight"]
-    weight_lm_head = sd[f"lm_head.weight"]
+    weight_embed = sd["model.embed_tokens.weight"]
+    weight_norm = sd["model.norm.weight"]
+    weight_lm_head = sd["lm_head.weight"]
 
     save_linear(
         norm_t=weight_norm,

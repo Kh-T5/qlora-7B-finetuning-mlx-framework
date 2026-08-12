@@ -1,24 +1,26 @@
-import mlx.nn as nn
-from dataclasses import dataclass, field
-from src.quant.utils_linear import LoRALinear, QuantizedLinear
-import mlx.core as mx
 import math
+from dataclasses import dataclass, field
+
+import mlx.core as mx
+import mlx.nn as nn
+
 from src.config import (
+    LoRA_r,
     alpha,
     dropout,
-    LoRA_r,
+    embed_dim,
+    head_dim,
     hidden_size_atten,
-    rms_norm_eps,
+    hidden_size_mlp,
+    lora_true,
     num_attention_heads,
     num_key_value_heads,
-    head_dim,
-    rope_theta,
-    hidden_size_mlp,
     num_layers,
+    rms_norm_eps,
+    rope_theta,
     vocab_size,
-    embed_dim,
-    lora_true,
 )
+from src.quant.utils_linear import LoRALinear, QuantizedLinear
 
 
 @dataclass
@@ -75,9 +77,9 @@ class MistralAttention(nn.Module):
         )
 
         # Quick check
-        assert (
-            self.hidden_size % self.num_heads == 0
-        ), "hidden_size must be divisible by num_attention_heads"
+        assert self.hidden_size % self.num_heads == 0, (
+            "hidden_size must be divisible by num_attention_heads"
+        )
 
         # projections set up
         q_out = self.num_heads * self.head_dim
@@ -242,9 +244,9 @@ class MistralAttention(nn.Module):
         if self.num_kv_heads == self.num_heads:
             return k, v
 
-        assert (
-            self.num_heads % self.num_kv_heads == 0
-        ), "num_heads must be multiple of num_key_value_heads"
+        assert self.num_heads % self.num_kv_heads == 0, (
+            "num_heads must be multiple of num_key_value_heads"
+        )
 
         repeat = self.num_heads // self.num_kv_heads
         # repeat along head dimension

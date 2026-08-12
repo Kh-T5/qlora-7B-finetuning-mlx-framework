@@ -1,5 +1,6 @@
 import mlx.core as mx
 import mlx.nn as nn
+
 from src.model.model import MistralModel
 from src.model.model_utils import MistralConfig
 
@@ -74,7 +75,6 @@ class MistralForCausalLM(nn.Module):
         # Compute loss during training
         loss = None
         if labels is not None:
-
             shift_logits = logits[:, :-1, :]
             shift_labels = labels[:, 1:]
 
