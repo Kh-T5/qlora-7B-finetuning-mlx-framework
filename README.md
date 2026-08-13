@@ -112,7 +112,7 @@ uv sync --extra convert
 
 ```bash
 uv run python scripts/prepare_data.py
-uv run python scripts/convert_weights_mlx.py
+uv run python -m mistral_qlora.model.convert_weights_mlx
 ```
 
 ### 3. Train

@@ -38,7 +38,7 @@ def preprocess_batch(batch):
     responses = batch["response"]
 
     prompts = []  # Concat instruction and context when it is available
-    for instr, ctx in zip(instructions, contexts):
+    for instr, ctx in zip(instructions, contexts, strict=True):
         if ctx:
             prompt = f"Instruction: {instr}\nContext: {ctx}\nResponse:"
         else:
@@ -60,7 +60,7 @@ def preprocess_batch(batch):
     all_attention_masks = []
 
     for prompt_ids, response_ids in zip(
-        prompt_enc["input_ids"], response_enc["input_ids"]
+        prompt_enc["input_ids"], response_enc["input_ids"], strict=True
     ):
         ids = (
             prompt_ids + response_ids + [eos_id]

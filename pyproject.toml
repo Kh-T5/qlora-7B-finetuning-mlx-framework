@@ -61,11 +61,4 @@ target-version = "py312"
 # E501 stays off: the only over-length lines are comments and docstrings,
 # and wrapping them would add churn without value.
 select = ["E4", "E7", "E9", "F", "I", "UP", "B"]
-# B905 (zip without strict=) is correct and all three call sites zip equal-length
-# sequences — but strict=True raises where the code currently proceeds, and Pass 1
-# is strictly behaviour-preserving. Flipped deliberately in CS4.
-ignore = ["B905"]
 
-[tool.ruff.lint.per-file-ignores]
-# Entry-point scripts use `from ... import *` for training helpers; CS4 removes it.
-"scripts/*" = ["F403", "F405"]

@@ -22,7 +22,11 @@ from mistral_qlora.data.adapters import load_lora_adapters, save_lora_adapters
 from mistral_qlora.data.data_loader_mlx import batch_iter, load_tokenized
 from mistral_qlora.model.model_utils import MistralConfig
 from mistral_qlora.model.model_wrapper import MistralForCausalLM
-from mistral_qlora.train.train_utils import *
+from mistral_qlora.train.train_utils import (
+    batch_token_loss_and_count,
+    lm_loss_fn,
+    make_lora_only_trainable,
+)
 
 # --------------------- Eval func ---------------------------
 
@@ -118,24 +122,15 @@ def train_qlora(
             global_step += 1
 
             # Forward + backward
-            tok_per_ex = mx.sum(batch["attention_mask"], axis=1)
-            sup_per_ex = mx.sum(
-                batch["labels"] != -100, axis=1
-            )  # if you use -100 ignore
-            mx.eval(tok_per_ex, sup_per_ex)
-            print("tok_per_ex:", tok_per_ex.tolist())
-            print("sup_per_ex:", sup_per_ex.tolist())
-
             loss, grads = loss_and_grad(model, batch, lora_true)
             opt.update(model, grads)
             mx.eval(model.parameters(), opt.state, loss)
             loss_train_history.append(loss.item())
 
-            if global_step % 1 == 0:
-                print(
-                    f"epoch {epoch + 1} step {step_in_epoch + 1}/{steps_per_epoch} "
-                    f"global_step {global_step}: loss={loss.item():.4f}"
-                )
+            print(
+                f"epoch {epoch + 1} step {step_in_epoch + 1}/{steps_per_epoch} "
+                f"global_step {global_step}: loss={loss.item():.4f}"
+            )
 
             if global_step % 500 == 0:
                 val_loss, val_ppl = evaluate_perplexity(

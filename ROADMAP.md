@@ -123,7 +123,7 @@ Each item is one atomic commit. A pass is one branch and one PR.
 - [x] **CS1** — uv, `pyproject.toml`, ruff, pre-commit, `ty`, `CLAUDE.md`
 - [x] **CS2** — pytest foundation + CI on `macos-14` (31 tests, hermetic, 0.3s)
 - [x] **CS3** — src-layout rename to `mistral_qlora/` (suite unchanged: 30 passed, 1 xfailed)
-- [ ] **CS4** — dead code removal
+- [x] **CS4** — dead code removal, `zip(..., strict=True)`
 - [ ] **CS5** — delete `_lora_or_linear` (B3)
 - [ ] **CS6** — single `masked_ce` (B5)
 - [ ] **CS7** — config split into frozen dataclasses

@@ -237,7 +237,7 @@ class MistralDecoder(nn.Module):
 
         new_caches = []
 
-        for layer, layer_cache in zip(self.layers, caches):
+        for layer, layer_cache in zip(self.layers, caches, strict=True):
             x, new_cache = layer(
                 x,
                 attn_mask=attn_mask,
