@@ -7,6 +7,17 @@ from mistral_qlora.quant.quant_4bit import (
 )
 
 
+class Linear(nn.Linear):
+    """`nn.Linear` carrying the shared projection signature.
+
+    Accepts `use_lora` and ignores it, so a projection can be called without the
+    caller knowing whether it holds adapters.
+    """
+
+    def __call__(self, x: mx.array, use_lora: bool = False) -> mx.array:
+        return super().__call__(x)
+
+
 class QuantizedLinear(nn.Module):
     """
     Linear layer corresponding to frozen 4bit mx.arrays.
@@ -33,18 +44,15 @@ class QuantizedLinear(nn.Module):
     ):
         super().__init__()
 
-        # init dim
         self.in_features = in_features
         self.out_features = out_features
         packed_cols = (in_features + 1) // 2
 
-        # init params
         self.quant_W = mx.zeros((out_features, packed_cols), dtype=mx.uint8)
         self.scale = mx.ones((out_features,), dtype=dtype)
         self.row_min = mx.zeros((out_features,), dtype=dtype)
         self.orig_in_features = in_features
 
-        # init bias
         if bias:
             self.bias = mx.zeros((out_features,), dtype=dtype)
         else:
@@ -92,7 +100,6 @@ class QuantizedLinear(nn.Module):
 
         returns QuantizedLinear initialiazed with provided quantized weights.
         """
-        # Ensure we have MX arrays with correct dtypes
         quant_W = mx.array(quant_W, dtype=mx.uint8)
         scale = mx.array(scale, dtype=dtype)
         row_min = mx.array(row_min, dtype=dtype)
@@ -127,12 +134,13 @@ class QuantizedLinear(nn.Module):
             dtype=mx.float16,
         )
 
-    def __call__(self, x: mx.array) -> mx.array:
+    def __call__(self, x: mx.array, use_lora: bool = False) -> mx.array:
         """
         Performs linear forward pass.
         Dequantizes the frozen weights W, computes and returns Wx + (bias optional)
 
         Input: x mx.array
+        use_lora: accepted and ignored; this layer holds no adapters.
         """
         W = self._dequantize_weight()
         y = x @ W.T
@@ -174,11 +182,9 @@ class LoRALinear(nn.Module):
         self.in_features = base.in_features
         self.out_features = base.out_features
 
-        ## LoRA matrices
         self.lora_A = nn.Linear(self.in_features, r, bias=False)
         self.lora_B = nn.Linear(r, self.out_features, bias=False)
 
-        # Add dropout when specified
         self.dropout = nn.Dropout(dropout) if dropout > 0.0 else None
         self.params_init()
 
@@ -208,10 +214,8 @@ class LoRALinear(nn.Module):
         """
         Performs QLoRA forward pass on a Linear layer.
         """
-        ## Frozen weights call (QuantizedLinear module)
         y = self.base(x)
 
-        ## Adapters call
         if use_lora and self.r > 0:
             if self.dropout is not None and self.training:
                 x_lora = self.dropout(x)

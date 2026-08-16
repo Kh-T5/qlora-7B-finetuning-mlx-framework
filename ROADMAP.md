@@ -70,7 +70,9 @@ behaviour, and LoRA will happily adapt around it and still produce a plausible l
 **B3 — `_lora_or_linear` dispatches types via `try/except TypeError`.** It cannot distinguish
 "this layer takes no `use_lora`" from "a shape error deep inside the adapter". The second case
 silently degrades to a frozen linear, disabling LoRA on that projection with no error.
-Duplicated verbatim in `MistralAttention` and `MistralMLP`. → CS5
+Duplicated verbatim in `MistralAttention` and `MistralMLP`. **Fixed in CS5**: all three
+linear types now share one `__call__(x, use_lora=...)` signature, so no dispatch is needed
+and an error inside an adapter propagates instead of silently disabling it.
 
 **B4 — Adapter keys were written mangled.** `mlx.utils.tree_flatten` returns dotted *strings*;
 the old `save_lora_adapters` did `[str(p) for p in key_path]`, iterating characters and
@@ -93,7 +95,7 @@ metadata at all — no `r`, `alpha`, target projections or dtype. → CS8
 then do `use_lora["q"]` unconditionally. Only `MistralModel.__call__` normalizes bool → dict,
 so calling either module directly with the default raises
 `TypeError: 'bool' object is not subscriptable`. The modules are untestable in isolation
-without passing an explicit dict. → CS5
+without passing an explicit dict. **Fixed in CS5** by `resolve_use_lora`.
 
 **B9 — The quantizer's `eps` floor underflows to zero in float16.**
 `quantize_4bit_per_row` casts to fp16, then guards with `scale = mx.maximum(scale, 1e-8)`.
@@ -124,7 +126,7 @@ Each item is one atomic commit. A pass is one branch and one PR.
 - [x] **CS2** — pytest foundation + CI on `macos-14` (31 tests, hermetic, 0.3s)
 - [x] **CS3** — src-layout rename to `mistral_qlora/` (suite unchanged: 30 passed, 1 xfailed)
 - [x] **CS4** — dead code removal, `zip(..., strict=True)`
-- [ ] **CS5** — delete `_lora_or_linear` (B3)
+- [x] **CS5** — delete `_lora_or_linear` (B3), fix `use_lora` bool default (B8)
 - [ ] **CS6** — single `masked_ce` (B5)
 - [ ] **CS7** — config split into frozen dataclasses
 - [ ] **CS8** — checkpoint format module (B7)

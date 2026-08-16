@@ -47,6 +47,11 @@ module-root = "src"
 
 [tool.pytest.ini_options]
 testpaths = ["test"]
+# Import from the source tree rather than the installed package. Belt-and-braces:
+# on macOS uv creates .venv with the UF_HIDDEN flag, which propagates to the
+# .pth it writes, and CPython's site.addpackage silently skips hidden .pth files
+# -- so the editable install can stop resolving after any reinstall. See CLAUDE.md.
+pythonpath = ["src"]
 addopts = "-ra --strict-markers"
 markers = [
     "slow: needs the real Mistral-7B weights or a Hugging Face download (excluded from CI)",

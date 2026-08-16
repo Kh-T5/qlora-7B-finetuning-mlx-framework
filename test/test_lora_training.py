@@ -1,8 +1,7 @@
-"""Which parameters actually receive gradients.
+"""Which parameters receive gradients.
 
-This is the file that matters most. QLoRA is only correct if the 4-bit base stays
-frozen and gradient flows to the adapters alone — and nothing about a plausible
-loss curve would tell you otherwise.
+QLoRA is correct only if the 4-bit base stays frozen and gradient reaches the
+adapters alone.
 """
 
 import mlx.core as mx
@@ -45,13 +44,7 @@ def test_quantized_base_weights_are_never_trainable(tiny_model):
 
 
 def test_gradients_reach_only_the_adapters(tiny_model, batch, use_lora_on):
-    """The regression test for the `_lora_or_linear` silent fallback (B3).
-
-    `_lora_or_linear` catches TypeError and retries the call without `use_lora`,
-    so any shape error inside an adapter silently degrades that projection to a
-    frozen linear. The loss still goes down — via the other projections — and
-    nothing surfaces. Missing adapter gradients are the observable symptom.
-    """
+    """Gradient reaches the adapters and nothing else."""
     make_lora_only_trainable(tiny_model)
     _, _, grads = _grads(tiny_model, batch, use_lora_on)
 
@@ -59,8 +52,6 @@ def test_gradients_reach_only_the_adapters(tiny_model, batch, use_lora_on):
     stray = [n for n in grads if "lora_A" not in n and "lora_B" not in n]
     assert not stray, f"gradient leaked to non-LoRA parameters: {stray[:5]}"
 
-    # lora_B is zero-initialised, so at step 0 dL/dA == 0 by construction while
-    # dL/dB is not. Asserting on B is what actually proves signal is arriving.
     b_grads = {n: g for n, g in grads.items() if "lora_B" in n}
     assert b_grads, "no lora_B gradients at all"
 
@@ -71,10 +62,10 @@ def test_gradients_reach_only_the_adapters(tiny_model, batch, use_lora_on):
 def test_every_targeted_projection_receives_gradient(
     tiny_model, tiny_config, batch, use_lora_on
 ):
-    """Catches a *subset* of adapters silently dropping out.
+    """Every adapted projection in every layer receives gradient.
 
-    A whole-model gradient check passes as long as one projection works. This
-    asserts per-projection, which is the granularity the B3 fallback breaks at.
+    Asserted per projection: a whole-model check passes while individual
+    adapters are dead.
     """
     make_lora_only_trainable(tiny_model)
     _, _, grads = _grads(tiny_model, batch, use_lora_on)

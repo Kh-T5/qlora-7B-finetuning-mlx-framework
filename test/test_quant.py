@@ -14,7 +14,7 @@ def test_roundtrip_error_is_bounded_by_step_size():
     """Dequantized weights land within half a quantization step of the original.
 
     With 4 bits the step is (row_max - row_min) / 15, so the worst-case error from
-    round-to-nearest is half that. This is the property the whole scheme rests on.
+    round-to-nearest is half that, with 1% slack for fp16 rounding.
     """
     w = mx.random.normal((16, 64)).astype(mx.float16)
     quant_w, scale, row_min, orig_in = quantize_4bit_per_row(w)
@@ -22,25 +22,26 @@ def test_roundtrip_error_is_bounded_by_step_size():
 
     assert w_hat.shape == w.shape
     max_err = mx.max(mx.abs(w.astype(mx.float32) - w_hat.astype(mx.float32))).item()
-    half_step = (mx.max(scale).item() / 2.0) * 1.01  # 1% slack for fp16 rounding
+    half_step = (mx.max(scale).item() / 2.0) * 1.01
     assert max_err <= half_step, f"{max_err} exceeds half-step {half_step}"
 
 
 def test_packing_halves_the_column_count():
+    """Two 4-bit values share each uint8, so 64 columns pack into 32."""
     w = mx.random.normal((8, 64))
     quant_w, _, _, orig_in = quantize_4bit_per_row(w)
 
     assert quant_w.dtype == mx.uint8
-    assert quant_w.shape == (8, 32)  # two 4-bit values per byte
+    assert quant_w.shape == (8, 32)
     assert orig_in == 64
 
 
 def test_odd_column_count_is_padded_then_trimmed():
-    """An odd width cannot pack evenly; the pad must not survive the roundtrip."""
+    """An odd width pads to ceil(7/2) bytes; the pad must not survive the roundtrip."""
     w = mx.random.normal((4, 7))
     quant_w, scale, row_min, orig_in = quantize_4bit_per_row(w)
 
-    assert quant_w.shape == (4, 4)  # ceil(7/2)
+    assert quant_w.shape == (4, 4)
     assert orig_in == 7
     assert dequantize_4bit_per_row(quant_w, scale, row_min, orig_in).shape == (4, 7)
 

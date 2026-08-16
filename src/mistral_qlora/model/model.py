@@ -3,8 +3,13 @@ import mlx.nn as nn
 import numpy as np
 
 from mistral_qlora.model.mistral_decoder import MistralDecoder, MistralDecoderLayer
-from mistral_qlora.model.model_utils import MistralAttention, MistralConfig, MistralMLP
-from mistral_qlora.quant.utils_linear import QuantizedLinear
+from mistral_qlora.model.model_utils import (
+    MistralAttention,
+    MistralConfig,
+    MistralMLP,
+    resolve_use_lora,
+)
+from mistral_qlora.quant.utils_linear import Linear, QuantizedLinear
 
 
 class MistralModel(nn.Module):
@@ -15,7 +20,7 @@ class MistralModel(nn.Module):
         decoder_layer=MistralDecoderLayer,
         attn=MistralAttention,
         mlp=MistralMLP,
-        linear_cls=nn.Linear,
+        linear_cls=Linear,
     ):
         super().__init__()
         self.embed = nn.Embedding(config.vocab_size, config.embed_dim)
@@ -67,22 +72,12 @@ class MistralModel(nn.Module):
             - logits (B, T, vocab_size)
             - cache list[dict] of KV cache for each layer
         """
-        if isinstance(use_lora, bool):
-            use_lora = {
-                "q": use_lora,
-                "k": use_lora,
-                "v": use_lora,
-                "o": use_lora,
-                "gate": use_lora,
-                "up": use_lora,
-                "down": use_lora,
-            }
+        use_lora = resolve_use_lora(use_lora)
 
-        x = self.embed(input_ids).astype(mx.float16)  # (B, T, D)
+        x = self.embed(input_ids).astype(mx.float16)
 
         attn_mask = None
         if attention_mask is not None and caches is None:
-            # Training case, we do not keep track of caches
             B, T = attention_mask.shape
 
             causal = mx.full((T, T), float("-inf"))

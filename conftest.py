@@ -2,8 +2,9 @@
 
 Everything here builds a *tiny* Mistral (2 layers, 64 dims, 128-token vocab) so the
 whole suite runs in seconds with no Mistral-7B weights and no Hugging Face download.
-That constraint is deliberate: a suite you cannot run on a clean checkout is one you
-stop running, and it is what makes CI possible at all.
+
+`use_lora` accepts both a bool and a per-projection dict. The fixtures here supply
+dicts for explicit control.
 """
 
 import mlx.core as mx
@@ -19,53 +20,44 @@ MLP_PROJECTIONS = ("gate_proj", "up_proj", "down_proj")
 ALL_LORA_KEYS = ("q", "k", "v", "o", "gate", "up", "down")
 
 
-# --------------------------------------------------------------------------
-# use_lora dicts
-#
-# B8: MistralAttention.__call__ and MistralMLP.__call__ declare
-# `use_lora: dict | bool = False` but index it as a dict unconditionally, so the
-# default raises TypeError. Every test passes an explicit dict until CS5 fixes it.
-# --------------------------------------------------------------------------
+@pytest.fixture(autouse=True)
+def _seed_rng():
+    """Seed MLX before every test so results do not depend on execution order."""
+    mx.random.seed(0)
 
 
 @pytest.fixture
 def use_lora_off() -> dict:
+    """Every projection with adapters disabled."""
     return dict.fromkeys(ALL_LORA_KEYS, False)
 
 
 @pytest.fixture
 def use_lora_on() -> dict:
+    """Every projection with adapters enabled."""
     return dict.fromkeys(ALL_LORA_KEYS, True)
-
-
-# --------------------------------------------------------------------------
-# Config
-# --------------------------------------------------------------------------
 
 
 @pytest.fixture
 def tiny_config() -> MistralConfig:
     """A Mistral small enough to be free, still obeying the architecture's constraints.
 
-    hidden_size_atten must equal num_attention_heads * head_dim, and embed_dim must
-    equal hidden_size_atten for the decoder to accept the embedding output.
+    hidden_size_atten (D) must equal num_attention_heads (H) * head_dim (Dh), and
+    embed_dim must equal it too for the decoder to accept the embedding output.
+    num_key_value_heads < num_attention_heads so GQA expansion is exercised.
+    Dropout is zero to keep every test deterministic.
     """
     cfg = MistralConfig()
     cfg.vocab_size = 128
     cfg.embed_dim = 64
-    cfg.hidden_size_atten = 64  # D  == H * Dh
+    cfg.hidden_size_atten = 64
     cfg.hidden_size_mlp = 128
-    cfg.num_attention_heads = 4  # H
-    cfg.num_key_value_heads = 2  # H_kv, exercises GQA expansion
-    cfg.head_dim = 16  # Dh
+    cfg.num_attention_heads = 4
+    cfg.num_key_value_heads = 2
+    cfg.head_dim = 16
     cfg.num_layers = 2
-    cfg.dropout = 0.0  # deterministic
+    cfg.dropout = 0.0
     return cfg
-
-
-# --------------------------------------------------------------------------
-# Weight helpers
-# --------------------------------------------------------------------------
 
 
 def pack_weight(w: mx.array) -> dict:
@@ -130,19 +122,13 @@ def weights_norm(tiny_config) -> dict:
     return {"input": ones, "post_attention": ones}
 
 
-# --------------------------------------------------------------------------
-# On-disk checkpoint, mirroring what convert_weights_mlx.py writes
-# --------------------------------------------------------------------------
-
-
 @pytest.fixture
 def checkpoint_dir(tmp_path, tiny_config, monkeypatch):
-    """Write a tiny checkpoint in the real on-disk layout and return its paths.
+    """Write a tiny checkpoint in the on-disk layout and return its paths.
 
-    monkeypatch is required because `build_decoder_from_npz` accepts a `dir` argument
-    but *also* reads the module-level `mistral_other_layers_quant_path` directly — so
-    without patching, this "hermetic" fixture would silently load the real 3.7 GB
-    checkpoint from data/. CS7 removes that reach-through and this patch with it.
+    `build_decoder_from_npz` reads `mistral_other_layers_quant_path` from its module
+    rather than from its `dir` argument, so that name is patched to keep the fixture
+    from reaching the real checkpoint under data/.
     """
     cfg = tiny_config
     layers_dir = tmp_path / "decoder_mlp_layers"
@@ -192,11 +178,14 @@ def tiny_model(tiny_config, checkpoint_dir) -> MistralForCausalLM:
 
 @pytest.fixture
 def batch(tiny_config):
-    """A supervised batch: prompt tokens masked out of the loss with -100."""
+    """A supervised batch of 2 x 8 tokens.
+
+    The first three label positions are -100, standing in for prompt tokens that
+    must not contribute to the loss.
+    """
     b, t = 2, 8
     input_ids = mx.random.randint(0, tiny_config.vocab_size, (b, t))
     labels = mx.array(np.array(input_ids))
-    # First 3 positions are "prompt" -> ignored by the loss.
     labels = mx.concatenate(
         [mx.full((b, 3), -100, dtype=labels.dtype), labels[:, 3:]], axis=1
     )

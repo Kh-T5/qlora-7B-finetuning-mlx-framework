@@ -6,6 +6,7 @@ import numpy as np
 
 from mistral_qlora.config import mistral_other_layers_quant_path
 from mistral_qlora.model.model_utils import MistralAttention, MistralConfig, MistralMLP
+from mistral_qlora.quant.utils_linear import Linear
 
 
 class MistralDecoderLayer(nn.Module):
@@ -15,18 +16,16 @@ class MistralDecoderLayer(nn.Module):
         *,
         attn_block=MistralAttention,
         mlp_block=MistralMLP,
-        linear_cls=nn.Linear,
+        linear_cls=Linear,
     ):
         super().__init__()
 
         h_dim = config.hidden_size_atten
         eps = config.rms_norm_eps
 
-        # RMSNorm layers
         self.input_layernorm = nn.RMSNorm(h_dim, eps=eps)
         self.post_attention_layernorm = nn.RMSNorm(h_dim, eps=eps)
 
-        # MLP & Attention
         self.attn = attn_block(config, linear_cls=linear_cls)
         self.mlp = mlp_block(config, linear_cls=linear_cls)
 
@@ -48,7 +47,6 @@ class MistralDecoderLayer(nn.Module):
                 handles LoRALinear, QuantizedLinear and nn.Linear
         """
 
-        # New class
         decoder = cls(config)
         decoder.attn = MistralAttention.from_quantized_weights(
             config, packed_weights_attn
@@ -69,15 +67,12 @@ class MistralDecoderLayer(nn.Module):
         Returns MistralDecoderLayer object with saved weights,
                 handles LoRALinear, QuantizedLinear and nn.Linear
         """
-        # Proj names
         names_attn = ["v_proj", "k_proj", "q_proj", "o_proj"]
         names_mlp = ["gate_proj", "down_proj", "up_proj"]
 
-        # Split weigths dict
         weights_mlp = {name: weights[name] for name in names_mlp}
         weights_attn = {name: weights[name] for name in names_attn}
 
-        # New class
         decoder = cls(config)
         decoder.attn = MistralAttention.from_weights(config, weights_attn)
         decoder.mlp = MistralMLP.from_weights(config, weights_mlp)
@@ -104,7 +99,6 @@ class MistralDecoderLayer(nn.Module):
         - positions, called for RoPE
         """
 
-        # Attention block
         residual = x
         h = self.input_layernorm(x)
         h, new_cache = self.attn(
@@ -116,7 +110,6 @@ class MistralDecoderLayer(nn.Module):
         )
         x = residual + h
 
-        # MLP block
         residual = x
         h = self.post_attention_layernorm(x)
         h = self.mlp(h, use_lora=use_lora)
@@ -133,7 +126,7 @@ class MistralDecoder(nn.Module):
         decoder_layer=MistralDecoderLayer,
         attn=MistralAttention,
         mlp=MistralMLP,
-        linear_cls=nn.Linear,
+        linear_cls=Linear,
     ):
         super().__init__()
 
@@ -177,7 +170,6 @@ class MistralDecoder(nn.Module):
         new_decoder.layers = []
 
         for i in range(config.num_layers):
-            # Load attention quantized weights
             packed_weights_attn = {}
             for name in names_attn:
                 path = os.path.join(dir, f"layer_{i:02d}_{name}{sfx_quant}")
@@ -189,7 +181,6 @@ class MistralDecoder(nn.Module):
                         "orig_in": int(data["orig_in"]),
                     }
 
-            # Load mlp quantized weights
             packed_weights_mlp = {}
             for name in names_mlp:
                 path = os.path.join(dir, f"layer_{i:02d}_{name}{sfx_quant}")
@@ -201,7 +192,6 @@ class MistralDecoder(nn.Module):
                         "orig_in": int(data["orig_in"]),
                     }
 
-            # Load RMSNorm weights
             weights_norm = {}
             for name in names_norm:
                 path = os.path.join(

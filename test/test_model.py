@@ -14,7 +14,7 @@ def test_forward_returns_vocab_logits(tiny_model, tiny_config, batch, use_lora_o
     b, t = batch["input_ids"].shape
 
     assert logits.shape == (b, t, tiny_config.vocab_size)
-    assert loss is None  # no labels passed
+    assert loss is None
     assert len(caches) == tiny_config.num_layers
 
 
@@ -33,8 +33,8 @@ def test_loss_is_finite_and_positive(tiny_model, batch, use_lora_off):
 def test_ignored_labels_do_not_affect_the_loss(tiny_model, batch, use_lora_off):
     """Changing a label that is masked to -100 must leave the loss untouched.
 
-    This is the property that makes prompt-masking work: only response tokens
-    should contribute gradient signal.
+    Only response tokens contribute gradient signal. The batch fixture masks
+    positions 0-2.
     """
     kwargs = dict(
         attention_mask=batch["attention_mask"],
@@ -42,7 +42,6 @@ def test_ignored_labels_do_not_affect_the_loss(tiny_model, batch, use_lora_off):
     )
     _, loss_a, _ = tiny_model(batch["input_ids"], labels=batch["labels"], **kwargs)
 
-    # Positions 0..2 are -100 in the batch fixture; scribble on one of them.
     tampered = mx.array(batch["labels"])
     tampered[:, 1] = 7
     tampered = mx.where(
@@ -56,7 +55,11 @@ def test_ignored_labels_do_not_affect_the_loss(tiny_model, batch, use_lora_off):
 
 
 def test_padding_is_excluded_from_the_loss(tiny_model, batch, use_lora_off):
-    """Tokens with attention_mask == 0 must not contribute to the loss."""
+    """Tokens with attention_mask == 0 must not contribute to the loss.
+
+    Of 8 positions, 7 survive the shift; the 2 padded ones and the leading -100
+    labels drop out.
+    """
     b, t = batch["input_ids"].shape
     mask = mx.concatenate(
         [mx.ones((b, t - 2), dtype=mx.int32), mx.zeros((b, 2), dtype=mx.int32)],
@@ -68,8 +71,6 @@ def test_padding_is_excluded_from_the_loss(tiny_model, batch, use_lora_off):
     )
     _, n_tokens = batch_token_loss_and_count(logits, batch["labels"], mask)
 
-    # 8 positions -> 7 after the shift; the 2 padded ones drop out, and the
-    # first 3 label positions are -100 (2 of which survive the shift).
     assert n_tokens.item() < b * (t - 1)
     assert n_tokens.item() > 0
 

@@ -12,7 +12,6 @@ def test_mlp_preserves_the_input_width(tiny_config, packed_mlp, use_lora_off):
 
     out = mlp(mx.random.normal((b, t, d)), use_lora=use_lora_off)
 
-    # Projects up to hidden_size_mlp and back down.
     assert out.shape == (b, t, d)
 
 
@@ -53,7 +52,7 @@ def test_decoder_layer_is_residual(
     x = mx.random.normal((1, 3, d))
     out, _ = layer(x, use_lora=use_lora_off)
 
-    assert d_h != d  # the down_proj stub really is changing width
+    assert d_h != d, "stub must actually change width"
     assert mx.allclose(out, x, atol=1e-3).item()
 
 
