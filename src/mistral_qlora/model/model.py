@@ -1,9 +1,15 @@
-import mlx.nn as nn
-from src.model.mistral_decoder import MistralDecoder, MistralDecoderLayer
-from src.model.model_utils import MistralAttention, MistralConfig, MistralMLP
-from src.quant.utils_linear import QuantizedLinear
 import mlx.core as mx
-import numpy as np
+import mlx.nn as nn
+
+from mistral_qlora.checkpoint import load_embeddings
+from mistral_qlora.config import MistralConfig
+from mistral_qlora.model.mistral_decoder import MistralDecoder, MistralDecoderLayer
+from mistral_qlora.model.model_utils import (
+    MistralAttention,
+    MistralMLP,
+    resolve_use_lora,
+)
+from mistral_qlora.quant.utils_linear import Linear, QuantizedLinear
 
 
 class MistralModel(nn.Module):
@@ -14,7 +20,7 @@ class MistralModel(nn.Module):
         decoder_layer=MistralDecoderLayer,
         attn=MistralAttention,
         mlp=MistralMLP,
-        linear_cls=nn.Linear,
+        linear_cls=Linear,
     ):
         super().__init__()
         self.embed = nn.Embedding(config.vocab_size, config.embed_dim)
@@ -32,10 +38,12 @@ class MistralModel(nn.Module):
         cls, config: MistralConfig, dir_weights_q: str, path_weights: str
     ) -> "MistralModel":
         new_model = cls(config)
-        new_model.decoder = MistralDecoder.build_decoder_from_npz(config, dir_weights_q)
-        with np.load(path_weights) as data:
-            new_model.embed.weight = mx.array(data["embed_np"], dtype=mx.float16)
-            weights_lm_head = mx.array(data["head_np"], dtype=mx.float16)
+        new_model.decoder = MistralDecoder.build_decoder_from_npz(
+            config, dir_weights_q, path_weights
+        )
+        weights = load_embeddings(path_weights)
+        new_model.embed.weight = mx.array(weights["embed"], dtype=mx.float16)
+        weights_lm_head = mx.array(weights["head"], dtype=mx.float16)
         new_model.lm_head = QuantizedLinear.convert_4bit(weights_lm_head)
 
         return new_model
@@ -66,22 +74,12 @@ class MistralModel(nn.Module):
             - logits (B, T, vocab_size)
             - cache list[dict] of KV cache for each layer
         """
-        if isinstance(use_lora, bool):
-            use_lora = {
-                "q": use_lora,
-                "k": use_lora,
-                "v": use_lora,
-                "o": use_lora,
-                "gate": use_lora,
-                "up": use_lora,
-                "down": use_lora,
-            }
+        use_lora = resolve_use_lora(use_lora)
 
-        x = self.embed(input_ids).astype(mx.float16)  # (B, T, D)
+        x = self.embed(input_ids).astype(mx.float16)
 
         attn_mask = None
         if attention_mask is not None and caches is None:
-            # Training case, we do not keep track of caches
             B, T = attention_mask.shape
 
             causal = mx.full((T, T), float("-inf"))

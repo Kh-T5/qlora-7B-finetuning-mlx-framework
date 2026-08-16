@@ -2,7 +2,7 @@
 
 Living document. Updated with every change set — not archived when the current refactor ends.
 
-**Last updated:** 2026-08-12
+**Last updated:** 2026-08-14
 
 ---
 
@@ -40,6 +40,7 @@ Verified 2026-08-12.
 | Hardware target | Apple Silicon, developed on M4 Pro / 24 GB unified |
 | Python | 3.12 (MLX 0.32.0 ships cp310-cp314 + `macosx_26_0_arm64`) |
 | Env | uv. Conda is retired. |
+| Config | frozen `MistralConfig` / `TrainConfig` / `Paths` + `constants.py` |
 
 **Training has never completed a full run.** `data/training_results/` is empty. See B1 below.
 
@@ -70,7 +71,9 @@ behaviour, and LoRA will happily adapt around it and still produce a plausible l
 **B3 — `_lora_or_linear` dispatches types via `try/except TypeError`.** It cannot distinguish
 "this layer takes no `use_lora`" from "a shape error deep inside the adapter". The second case
 silently degrades to a frozen linear, disabling LoRA on that projection with no error.
-Duplicated verbatim in `MistralAttention` and `MistralMLP`. → CS5
+Duplicated verbatim in `MistralAttention` and `MistralMLP`. **Fixed in CS5**: all three
+linear types now share one `__call__(x, use_lora=...)` signature, so no dispatch is needed
+and an error inside an adapter propagates instead of silently disabling it.
 
 **B4 — Adapter keys were written mangled.** `mlx.utils.tree_flatten` returns dotted *strings*;
 the old `save_lora_adapters` did `[str(p) for p in key_path]`, iterating characters and
@@ -79,20 +82,46 @@ written by the broken code and is unloadable. → CS0 (fixed), CS14 (documented)
 
 **B5 — Masked cross-entropy implemented twice and already drifting.** `MistralForCausalLM`
 and `train_utils.batch_token_loss_and_count` do the same shift-mask-CE, but only one casts to
-float32 — so training loss and eval loss are not strictly comparable. → CS6
+float32 — so training loss and eval loss are not strictly comparable. **Fixed in CS6**:
+one `masked_ce` in `train/loss.py` returning `(total_loss, n_tokens)`.
 
 **B6 — Per-row quantization is coarse.** One scale+min covers a full 4096-wide row (14336 for
 MLP projections), so a single outlier inflates the range for every weight in the row. → CS12
 
 **B7 — Checkpoint format is unowned.** The `layer_{i:02d}_{name}.npz` scheme and its key names
 are written in one file and re-read in two others that never reference it. Adapters carry no
-metadata at all — no `r`, `alpha`, target projections or dtype. → CS8
+metadata at all — no `r`, `alpha`, target projections or dtype. **Fixed in CS8**:
+`checkpoint.py` owns filenames, keys, dtypes and metadata for every read and write.
+
+**B8 — `use_lora` defaults to `False` but is indexed as a dict.**
+`MistralAttention.__call__` and `MistralMLP.__call__` declare `use_lora: dict | bool = False`
+then do `use_lora["q"]` unconditionally. Only `MistralModel.__call__` normalizes bool → dict,
+so calling either module directly with the default raises
+`TypeError: 'bool' object is not subscriptable`. The modules are untestable in isolation
+without passing an explicit dict. **Fixed in CS5** by `resolve_use_lora`.
+
+**B9 — The quantizer's `eps` floor underflows to zero in float16.**
+`quantize_4bit_per_row` casts to fp16, then guards with `scale = mx.maximum(scale, 1e-8)`.
+But `1e-8` is below fp16's smallest subnormal (~6e-8), so it *is* `0.0` — the guard is a no-op.
+Any row whose range is under ~1e-6 gets `scale = 0`, and `(W - row_min) / scale` becomes
+`0/0`. It does not raise: the NaN packs to zeros, so the row silently quantizes to garbage.
+Found by the CS2 suite; covered by an `xfail(strict=True)` that flips green when fixed. → CS12
+
+**B10 — `mx.ones_like(x, dtype=...)` raises TypeError.** Both copies of the masked CE built
+their all-valid mask that way, but the branch only runs when `attention_mask is None`, which
+the model path never did. Found by the CS6 loss tests. **Fixed in CS6.**
+
+**The test suite is red at `main` and has been.** 8 of 9 tests fail, 7 of them on B8 —
+verified by running `git archive HEAD` in a clean directory, so this pre-dates the refactor.
+Consequence for CS2: characterization tests cannot "lock in current behaviour" where current
+behaviour is a crash. CS2 writes tests that pass an explicit `use_lora` dict (which the
+rewritten tests do naturally); CS5 fixes B8 and adds coverage for the bool path.
 
 ---
 
 ## Plan
 
-Detail lives in [`docs/REFACTOR-PLAN.md`](docs/REFACTOR-PLAN.md) (added in CS1).
+Each item is one atomic commit. A pass is one branch and one PR.
 
 ### Axis 1 — land existing work
 
@@ -100,21 +129,22 @@ Detail lives in [`docs/REFACTOR-PLAN.md`](docs/REFACTOR-PLAN.md) (added in CS1).
 
 ### Axis 2 — Pass 1: clean + modernize (zero behaviour change)
 
-- [ ] **CS1** — uv, `pyproject.toml`, ruff, pre-commit, `ty`, `CLAUDE.md`
-- [ ] **CS2** — pytest foundation + CI on `macos-14`
-- [ ] **CS3** — src-layout rename to `mistral_qlora/`
-- [ ] **CS4** — dead code removal
-- [ ] **CS5** — delete `_lora_or_linear` (B3)
-- [ ] **CS6** — single `masked_ce` (B5)
-- [ ] **CS7** — config split into frozen dataclasses
-- [ ] **CS8** — checkpoint format module (B7)
-- [ ] **CS9** — modernized README
+- [x] **CS1** — uv, `pyproject.toml`, ruff, pre-commit, `ty`, `CLAUDE.md`
+- [x] **CS2** — pytest foundation + CI on `macos-14` (31 tests, hermetic, 0.3s)
+- [x] **CS3** — src-layout rename to `mistral_qlora/` (suite unchanged: 30 passed, 1 xfailed)
+- [x] **CS4** — dead code removal, `zip(..., strict=True)`
+- [x] **CS5** — delete `_lora_or_linear` (B3), fix `use_lora` bool default (B8)
+- [x] **CS6** — single `masked_ce` (B5), fix latent `ones_like` crash (B10)
+- [x] **CS7** — config split into frozen dataclasses + `constants.py`
+- [x] **CS8** — checkpoint format module (B7)
+- [x] **CS9** — modernized README
 
 Pass 1 tests are **characterization** tests: they lock in current behaviour *including B2*, so
 that refactoring is provably safe. They are not correctness tests. CS10 replaces their numeric
 expectations with HF-derived golden values.
 
-Pass 1 ends at a demo point: green CI on a from-scratch transformer.
+Pass 1 ends at a demo point: green CI on a from-scratch transformer. **Complete** — 68 tests,
+hermetic, no 7B weights required.
 
 ### Axis 3 — Pass 2: numerics
 
@@ -161,5 +191,6 @@ Recorded so they are not re-litigated. Add to this table rather than rewriting h
 
 - **No binaries in git.** The repo is 61 KB. Checkpoints, adapters and datasets are gitignored.
 - **No git writes by agents.** Agents prepare file changes; a human stages, commits and pushes.
-- One change set = one PR.
+- **Conventional Commits**, atomic — one logical change per commit.
+- One change set = one commit. One pass = one branch (`<type>/<kebab-description>`) = one PR.
 - Update this file as part of the change set, not afterwards.

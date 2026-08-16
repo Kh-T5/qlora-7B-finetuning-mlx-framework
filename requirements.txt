@@ -1,6 +1,0 @@
-mlx
-transformers
-accelerate
-peft
-datasets
-tensorboard

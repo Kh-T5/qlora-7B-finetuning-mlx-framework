@@ -1,50 +1,24 @@
-import mlx.nn as nn
-from dataclasses import dataclass, field
-from src.quant.utils_linear import LoRALinear, QuantizedLinear
-import mlx.core as mx
 import math
-from src.config import (
-    alpha,
-    dropout,
-    LoRA_r,
-    hidden_size_atten,
-    rms_norm_eps,
-    num_attention_heads,
-    num_key_value_heads,
-    head_dim,
-    rope_theta,
-    hidden_size_mlp,
-    num_layers,
-    vocab_size,
-    embed_dim,
-    lora_true,
-)
+
+import mlx.core as mx
+import mlx.nn as nn
+
+from mistral_qlora.config import MistralConfig
+from mistral_qlora.constants import LORA_TARGETS
+from mistral_qlora.quant.utils_linear import Linear, LoRALinear, QuantizedLinear
 
 
-@dataclass
-class MistralConfig:
-    # Embedding
-    vocab_size: int = vocab_size
-    embed_dim: int = embed_dim
-    ### LoRA
-    alpha: float = alpha
-    dropout: float = dropout
-    r: int = LoRA_r
-    lora_true: dict = field(default_factory=lambda: lora_true.copy())
-    ### Attention
-    hidden_size_atten: int = hidden_size_atten
-    rms_norm_eps: float = rms_norm_eps
-    num_attention_heads: int = num_attention_heads
-    num_key_value_heads: int = num_key_value_heads
-    head_dim: int = head_dim
-    rope_theta: float = rope_theta
-    ### MLP
-    hidden_size_mlp: int = hidden_size_mlp
-    ### Decoder
-    num_layers: int = num_layers
+def resolve_use_lora(use_lora: "dict | bool") -> dict:
+    """Normalize the `bool` shorthand into the per-projection dict.
+
+    `True`/`False` applies to every projection in LORA_TARGETS; a dict selects
+    them individually and passes through unchanged.
+    """
+    if isinstance(use_lora, bool):
+        return dict.fromkeys(LORA_TARGETS, use_lora)
+    return use_lora
 
 
-### ----------------- Attention Block -----------------------
 class MistralAttention(nn.Module):
     """
     Implements MistralAttention module in MLX, respecting original configuration and structure.
@@ -52,34 +26,29 @@ class MistralAttention(nn.Module):
     """
 
     def __init__(
-        self, config: MistralConfig, *, linear_cls=nn.Linear, use_bias: bool = False
+        self, config: MistralConfig, *, linear_cls=Linear, use_bias: bool = False
     ):
         super().__init__()
 
-        # Attention params
         self.hidden_size = config.hidden_size_atten
         self.num_heads = config.num_attention_heads
         self.num_kv_heads = config.num_key_value_heads
         self.head_dim = config.head_dim
         self.rope_theta = config.rope_theta
 
-        # LoRA params
         self.r = config.r
         self.alpha = config.alpha
         self.dropout = config.dropout
 
-        # Rotation
         self.inv_freq = 1.0 / (
             self.rope_theta
             ** (mx.arange(0, self.head_dim, 2, dtype=mx.float32) / self.head_dim)
         )
 
-        # Quick check
-        assert (
-            self.hidden_size % self.num_heads == 0
-        ), "hidden_size must be divisible by num_attention_heads"
+        assert self.hidden_size % self.num_heads == 0, (
+            "hidden_size must be divisible by num_attention_heads"
+        )
 
-        # projections set up
         q_out = self.num_heads * self.head_dim
         kv_out = self.num_kv_heads * self.head_dim
 
@@ -115,7 +84,6 @@ class MistralAttention(nn.Module):
         alpha = attn.alpha
         dropout = attn.dropout
 
-        # q_proj
         packed_weights_q = packed_weights["q_proj"]
         attn.q_proj = QuantizedLinear.from_packed(
             packed_weights_q["weight_q"],
@@ -127,7 +95,6 @@ class MistralAttention(nn.Module):
             attn.q_proj = LoRALinear.from_quantLinear(
                 base=attn.q_proj, r=r, alpha=alpha, dropout=dropout
             )
-        # v_proj
         packed_weights_v = packed_weights["v_proj"]
         attn.v_proj = QuantizedLinear.from_packed(
             packed_weights_v["weight_q"],
@@ -140,7 +107,6 @@ class MistralAttention(nn.Module):
                 base=attn.v_proj, r=r, alpha=alpha, dropout=dropout
             )
 
-        # k_proj
         packed_weights_k = packed_weights["k_proj"]
         attn.k_proj = QuantizedLinear.from_packed(
             packed_weights_k["weight_q"],
@@ -153,7 +119,6 @@ class MistralAttention(nn.Module):
                 base=attn.k_proj, r=r, alpha=alpha, dropout=dropout
             )
 
-        # o_proj
         packed_weights_o = packed_weights["o_proj"]
         attn.o_proj = QuantizedLinear.from_packed(
             packed_weights_o["weight_q"],
@@ -200,15 +165,6 @@ class MistralAttention(nn.Module):
 
         return attn
 
-    def _lora_or_linear(self, layer, x, use_lora: bool):
-        """
-        Runs the forward pass for a plain Linear/QuantizedLinear layer or with LoRALinear
-        """
-        try:
-            return layer(x, use_lora=use_lora)  # LoRA layer
-        except TypeError:
-            return layer(x)  # Linear or QuantizedLinear layer
-
     def _shape_q(self, x):
         """
         (B, T, H*Dh) -> (B, num_heads, T, head_dim)
@@ -242,12 +198,11 @@ class MistralAttention(nn.Module):
         if self.num_kv_heads == self.num_heads:
             return k, v
 
-        assert (
-            self.num_heads % self.num_kv_heads == 0
-        ), "num_heads must be multiple of num_key_value_heads"
+        assert self.num_heads % self.num_kv_heads == 0, (
+            "num_heads must be multiple of num_key_value_heads"
+        )
 
         repeat = self.num_heads // self.num_kv_heads
-        # repeat along head dimension
         k = mx.repeat(k, repeat, axis=1)
         v = mx.repeat(v, repeat, axis=1)
         return k, v
@@ -265,20 +220,14 @@ class MistralAttention(nn.Module):
         cos = mx.cos(freqs)[None, None, :, :]
         sin = mx.sin(freqs)[None, None, :, :]
 
-        # x: (B, H, T, Dh)
-        x_ = mx.transpose(x, (0, 1, 2, 3))  # just alias
+        x1 = x[..., ::2]
+        x2 = x[..., 1::2]
 
-        x1 = x_[..., ::2]
-        x2 = x_[..., 1::2]
-
-        # RoPE rotation
         x_rot_first = x1 * cos - x2 * sin
         x_rot_second = x1 * sin + x2 * cos
 
         x_rot = mx.concatenate([x_rot_first, x_rot_second], axis=-1)
         return x_rot
-
-        ## -------------- Forward Pass ---------------------
 
     def __call__(
         self,
@@ -305,18 +254,16 @@ class MistralAttention(nn.Module):
             If None, uses range with offset from cache length.
         """
         B, T, _ = x.shape
+        use_lora = resolve_use_lora(use_lora)
 
-        # Linear proj
-        q = self._lora_or_linear(self.q_proj, x, use_lora=use_lora["q"])
-        k = self._lora_or_linear(self.k_proj, x, use_lora=use_lora["k"])
-        v = self._lora_or_linear(self.v_proj, x, use_lora=use_lora["v"])
+        q = self.q_proj(x, use_lora=use_lora["q"])
+        k = self.k_proj(x, use_lora=use_lora["k"])
+        v = self.v_proj(x, use_lora=use_lora["v"])
 
-        # Reshape intop heads for attention operations:
         q = self._shape_q(q)
         k = self._shape_kv(k)
         v = self._shape_kv(v)
 
-        # RoPE
         if cache is not None and "k" in cache:
             past_len = cache["k"].shape[2]
         else:
@@ -327,50 +274,39 @@ class MistralAttention(nn.Module):
         q = self._apply_rope(q, positions)
         k = self._apply_rope(k, positions)
 
-        # Update cache
         if cache is not None and "k" in cache and "v" in cache:
             k = mx.concatenate([cache["k"], k], axis=2)
             v = mx.concatenate([cache["v"], v], axis=2)
 
-        # Keeps track of k, v for future tokens before expanding
         new_cache = {"k": k, "v": v}
 
-        # Expansion of k, v heads
         k, v = self._expand_kv(k, v)
 
-        # Attention mechanism [ Softmax(Q@K.T/scale ) ]
         scale = 1.0 / math.sqrt(self.head_dim)
         scores = mx.matmul(q, mx.transpose(k, (0, 1, 3, 2))) * scale
 
         if attn_mask is not None:
-            # mask is 0 or -inf
             scores = scores + attn_mask
 
         attn_weights = mx.softmax(scores, axis=-1)
 
-        # Output
         context = mx.matmul(attn_weights, v)
         context = mx.transpose(context, (0, 2, 1, 3))
         context = context.reshape(B, T, self.hidden_size)
 
-        out = self._lora_or_linear(self.o_proj, context, use_lora["o"])
+        out = self.o_proj(context, use_lora=use_lora["o"])
 
         return out, new_cache
 
 
-### ----------------- MLP Block -----------------------
-
-
 class MistralMLP(nn.Module):
     def __init__(
-        self, config: MistralConfig, *, linear_cls=nn.Linear, use_bias: bool = False
+        self, config: MistralConfig, *, linear_cls=Linear, use_bias: bool = False
     ):
         super().__init__()
 
-        # Attention params
         self.hidden_size = config.hidden_size_mlp
         self.input_size = config.hidden_size_atten
-        # LoRA params
         self.r = config.r
         self.alpha = config.alpha
         self.dropout = config.dropout
@@ -406,7 +342,6 @@ class MistralMLP(nn.Module):
         alpha = mlp.alpha
         dropout = mlp.dropout
 
-        # gate_proj
         packed_weights_gate = packed_weights["gate_proj"]
         mlp.gate_proj = QuantizedLinear.from_packed(
             packed_weights_gate["weight_q"],
@@ -419,7 +354,6 @@ class MistralMLP(nn.Module):
                 base=mlp.gate_proj, r=r, alpha=alpha, dropout=dropout
             )
 
-        # down_proj
         packed_weights_down = packed_weights["down_proj"]
         mlp.down_proj = QuantizedLinear.from_packed(
             packed_weights_down["weight_q"],
@@ -432,7 +366,6 @@ class MistralMLP(nn.Module):
                 base=mlp.down_proj, r=r, alpha=alpha, dropout=dropout
             )
 
-        # up_proj
         packed_weights_up = packed_weights["up_proj"]
         mlp.up_proj = QuantizedLinear.from_packed(
             packed_weights_up["weight_q"],
@@ -476,15 +409,6 @@ class MistralMLP(nn.Module):
 
         return mlp
 
-    def _lora_or_linear(self, layer, x, use_lora: bool):
-        """
-        Runs the forward pass for a plain Linear/QuantizedLinear layer or with LoRALinear
-        """
-        try:
-            return layer(x, use_lora=use_lora)  # LoRA layer
-        except TypeError:
-            return layer(x)  # nn.Linear or QuantizedLinear layer
-
     def __call__(
         self,
         x: mx.array,
@@ -493,13 +417,14 @@ class MistralMLP(nn.Module):
     ):
         """
         Forward pass in the MLP block given an input x: mx.array.
-        Handles nn.Linear, QuantizationLinear and LoRALinear layers.
+        Handles Linear, QuantizedLinear and LoRALinear layers uniformly.
         """
+        use_lora = resolve_use_lora(use_lora)
 
-        gate = self._lora_or_linear(self.gate_proj, x, use_lora=use_lora["gate"])
-        up = self._lora_or_linear(self.up_proj, x, use_lora=use_lora["up"])
+        gate = self.gate_proj(x, use_lora=use_lora["gate"])
+        up = self.up_proj(x, use_lora=use_lora["up"])
 
         h = nn.silu(gate) * up
-        out = self._lora_or_linear(self.down_proj, h, use_lora=use_lora["down"])
+        out = self.down_proj(h, use_lora=use_lora["down"])
 
         return out

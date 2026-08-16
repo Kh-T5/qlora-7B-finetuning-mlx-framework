@@ -1,0 +1,69 @@
+[project]
+name = "mistral-qlora"
+version = "0.1.0"
+description = "QLoRA fine-tuning of Mistral-7B, implemented from scratch in MLX on Apple Silicon"
+readme = "README.md"
+requires-python = ">=3.12"
+authors = [{ name = "Kh-T5" }]
+keywords = ["mlx", "qlora", "lora", "quantization", "mistral", "apple-silicon"]
+
+# Runtime dependencies for training and evaluation only.
+# Rebuilt from the actual import graph — the retired requirements.txt declared
+# accelerate/peft/tensorboard (never imported) and omitted torch/numpy (imported everywhere).
+dependencies = [
+    "mlx>=0.32.0",
+    "numpy>=2.0",
+    "datasets>=3.0",
+]
+
+[project.optional-dependencies]
+# One-time preprocessing only: HF weight download + 4-bit conversion
+# (convert_weights_mlx.py) and Dolly tokenization (prepare_data.py).
+# Keeping torch out of the default install is the point — training needs neither.
+#   uv sync --extra convert
+convert = [
+    "torch>=2.5",
+    "transformers>=4.44",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.16",
+    "pre-commit>=4.0",
+    "ty==0.0.70", # pre-1.0, pinned exactly; non-blocking in CI
+]
+
+[build-system]
+requires = ["uv_build>=0.9,<0.20"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+# src-layout: the package is importable only once installed, never by accident
+# from the working tree. That is what removes the "must run from the repo root"
+# constraint the old top-level `src` package imposed.
+module-name = "mistral_qlora"
+module-root = "src"
+
+[tool.pytest.ini_options]
+testpaths = ["test"]
+# Import from the source tree rather than the installed package. Belt-and-braces:
+# on macOS uv creates .venv with the UF_HIDDEN flag, which propagates to the
+# .pth it writes, and CPython's site.addpackage silently skips hidden .pth files
+# -- so the editable install can stop resolving after any reinstall. See CLAUDE.md.
+pythonpath = ["src"]
+addopts = "-ra --strict-markers"
+markers = [
+    "slow: needs the real Mistral-7B weights or a Hugging Face download (excluded from CI)",
+]
+
+[tool.ruff]
+line-length = 88 # matches the existing black-formatted code
+target-version = "py312"
+
+[tool.ruff.lint]
+# Ruff defaults (E4/E7/E9 + F) plus import sorting and modernization.
+# E501 stays off: the only over-length lines are comments and docstrings,
+# and wrapping them would add churn without value.
+select = ["E4", "E7", "E9", "F", "I", "UP", "B"]
+

@@ -1,5 +1,5 @@
-import numpy as np
 import mlx.core as mx
+import numpy as np
 from datasets import load_from_disk
 
 
@@ -24,7 +24,6 @@ def batch_iter(ds, batch_size: int, shuffle: bool = True):
         np.random.shuffle(indices)
 
     for i in range(0, len(indices), batch_size):
-
         batch_indices = indices[i : i + batch_size]
         batch = ds[batch_indices]
 

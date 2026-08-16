@@ -1,9 +1,17 @@
-import mlx.nn as nn
-from src.model.model_utils import MistralMLP, MistralAttention, MistralConfig
 import mlx.core as mx
-from src.config import mistral_other_layers_quant_path
-import os
-import numpy as np
+import mlx.nn as nn
+
+from mistral_qlora.checkpoint import (
+    layer_norm_path,
+    layer_weight_path,
+    load_embeddings,
+    load_norm,
+    load_quantized_weight,
+)
+from mistral_qlora.config import MistralConfig
+from mistral_qlora.constants import ATTN_PROJECTIONS, MLP_PROJECTIONS, NORM_NAMES
+from mistral_qlora.model.model_utils import MistralAttention, MistralMLP
+from mistral_qlora.quant.utils_linear import Linear
 
 
 class MistralDecoderLayer(nn.Module):
@@ -13,18 +21,16 @@ class MistralDecoderLayer(nn.Module):
         *,
         attn_block=MistralAttention,
         mlp_block=MistralMLP,
-        linear_cls=nn.Linear,
+        linear_cls=Linear,
     ):
         super().__init__()
 
         h_dim = config.hidden_size_atten
         eps = config.rms_norm_eps
 
-        # RMSNorm layers
         self.input_layernorm = nn.RMSNorm(h_dim, eps=eps)
         self.post_attention_layernorm = nn.RMSNorm(h_dim, eps=eps)
 
-        # MLP & Attention
         self.attn = attn_block(config, linear_cls=linear_cls)
         self.mlp = mlp_block(config, linear_cls=linear_cls)
 
@@ -46,7 +52,6 @@ class MistralDecoderLayer(nn.Module):
                 handles LoRALinear, QuantizedLinear and nn.Linear
         """
 
-        # New class
         decoder = cls(config)
         decoder.attn = MistralAttention.from_quantized_weights(
             config, packed_weights_attn
@@ -67,15 +72,12 @@ class MistralDecoderLayer(nn.Module):
         Returns MistralDecoderLayer object with saved weights,
                 handles LoRALinear, QuantizedLinear and nn.Linear
         """
-        # Proj names
         names_attn = ["v_proj", "k_proj", "q_proj", "o_proj"]
         names_mlp = ["gate_proj", "down_proj", "up_proj"]
 
-        # Split weigths dict
         weights_mlp = {name: weights[name] for name in names_mlp}
         weights_attn = {name: weights[name] for name in names_attn}
 
-        # New class
         decoder = cls(config)
         decoder.attn = MistralAttention.from_weights(config, weights_attn)
         decoder.mlp = MistralMLP.from_weights(config, weights_mlp)
@@ -102,7 +104,6 @@ class MistralDecoderLayer(nn.Module):
         - positions, called for RoPE
         """
 
-        # Attention block
         residual = x
         h = self.input_layernorm(x)
         h, new_cache = self.attn(
@@ -114,7 +115,6 @@ class MistralDecoderLayer(nn.Module):
         )
         x = residual + h
 
-        # MLP block
         residual = x
         h = self.post_attention_layernorm(x)
         h = self.mlp(h, use_lora=use_lora)
@@ -131,7 +131,7 @@ class MistralDecoder(nn.Module):
         decoder_layer=MistralDecoderLayer,
         attn=MistralAttention,
         mlp=MistralMLP,
-        linear_cls=nn.Linear,
+        linear_cls=Linear,
     ):
         super().__init__()
 
@@ -144,82 +144,42 @@ class MistralDecoder(nn.Module):
         self.final_norm = nn.RMSNorm(config.hidden_size_atten, eps=config.rms_norm_eps)
 
     @classmethod
-    def build_decoder_from_npz(cls, config: MistralConfig, dir: str):
-        """
-        Constructor for MistralDecoder block: 32 * MistralDecoderLayer,
-        Mirors original Mistral architechure:
-                                        (0-31): 32 x MistralDecoderLayer(
-                                    (self_attn): MistralAttention(
-                                    (q_proj): Linear(in_features=4096, out_features=4096, bias=False)
-                                    (k_proj): Linear(in_features=4096, out_features=1024, bias=False)
-                                    (v_proj): Linear(in_features=4096, out_features=1024, bias=False)
-                                    (o_proj): Linear(in_features=4096, out_features=4096, bias=False)
-                                    )
-                                    (mlp): MistralMLP(
-                                    (gate_proj): Linear(in_features=4096, out_features=14336, bias=False)
-                                    (up_proj): Linear(in_features=4096, out_features=14336, bias=False)
-                                    (down_proj): Linear(in_features=14336, out_features=4096, bias=False)
-                                    (act_fn): SiLUActivation()
-                                    )
-        Inputs:
-            - config, MistralConfig
-            - dir, str, directory where pre-trained model weigths are stored
+    def build_decoder_from_npz(
+        cls, config: MistralConfig, layers_dir: str, norm_path: str
+    ):
+        """Build the decoder stack from a quantized checkpoint on disk.
 
+        Inputs:
+            config: MistralConfig
+            layers_dir: directory holding the per-layer .npz and .npy files
+            norm_path: .npz holding the final RMSNorm weight under "norm_np"
         """
-        names_attn = ["v_proj", "k_proj", "q_proj", "o_proj"]
-        names_mlp = ["gate_proj", "down_proj", "up_proj"]
-        names_norm = ["input", "post_attention"]
-        sfx_quant = ".npz"
-        sfx_no_quant = ".npy"
         new_decoder = cls(config)
         new_decoder.layers = []
 
         for i in range(config.num_layers):
-
-            # Load attention quantized weights
-            packed_weights_attn = {}
-            for name in names_attn:
-                path = os.path.join(dir, f"layer_{i:02d}_{name}{sfx_quant}")
-                with np.load(path) as data:
-                    packed_weights_attn[name] = {
-                        "weight_q": data["weight_q"],
-                        "scale": data["scale"],
-                        "row_min": data["row_min"],
-                        "orig_in": int(data["orig_in"]),
-                    }
-
-            # Load mlp quantized weights
-            packed_weights_mlp = {}
-            for name in names_mlp:
-                path = os.path.join(dir, f"layer_{i:02d}_{name}{sfx_quant}")
-                with np.load(path) as data:
-                    packed_weights_mlp[name] = {
-                        "weight_q": data["weight_q"],
-                        "scale": data["scale"],
-                        "row_min": data["row_min"],
-                        "orig_in": int(data["orig_in"]),
-                    }
-
-            # Load RMSNorm weights
-            weights_norm = {}
-            for name in names_norm:
-                path = os.path.join(
-                    dir, f"layer_{i:02d}_{name}_layernorm{sfx_no_quant}"
-                )
-                weights_norm[name] = mx.array(np.load(path), dtype=mx.float16)
+            packed = {
+                name: load_quantized_weight(layer_weight_path(layers_dir, i, name))
+                for name in ATTN_PROJECTIONS + MLP_PROJECTIONS
+            }
+            weights_norm = {
+                name: load_norm(layer_norm_path(layers_dir, i, name))
+                for name in NORM_NAMES
+            }
 
             new_decoder.layers.append(
                 MistralDecoderLayer.from_quantized_weights(
                     config,
-                    packed_weights_mlp=packed_weights_mlp,
-                    packed_weights_attn=packed_weights_attn,
+                    packed_weights_mlp={n: packed[n] for n in MLP_PROJECTIONS},
+                    packed_weights_attn={n: packed[n] for n in ATTN_PROJECTIONS},
                     weights_norm=weights_norm,
                 )
             )
-            with np.load(mistral_other_layers_quant_path) as data:
-                new_decoder.final_norm.weight = mx.array(
-                    data["norm_np"], dtype=mx.float16
-                )
+
+        new_decoder.final_norm.weight = mx.array(
+            load_embeddings(norm_path)["norm"], dtype=mx.float16
+        )
+
         return new_decoder
 
     def __call__(
@@ -236,7 +196,7 @@ class MistralDecoder(nn.Module):
 
         new_caches = []
 
-        for layer, layer_cache in zip(self.layers, caches):
+        for layer, layer_cache in zip(self.layers, caches, strict=True):
             x, new_cache = layer(
                 x,
                 attn_mask=attn_mask,

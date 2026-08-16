@@ -1,7 +1,9 @@
 import mlx.core as mx
 import mlx.nn as nn
-from src.model.model import MistralModel
-from src.model.model_utils import MistralConfig
+
+from mistral_qlora.config import MistralConfig
+from mistral_qlora.model.model import MistralModel
+from mistral_qlora.train.loss import mean_ce
 
 
 class MistralForCausalLM(nn.Module):
@@ -71,41 +73,8 @@ class MistralForCausalLM(nn.Module):
             use_lora=use_lora,
         )
 
-        # Compute loss during training
         loss = None
         if labels is not None:
-
-            shift_logits = logits[:, :-1, :]
-            shift_labels = labels[:, 1:]
-
-            if attention_mask is not None:
-                shift_attn = attention_mask[:, 1:]  # (B, T-1)
-                valid_from_mask = shift_attn > 0
-            else:
-                valid_from_mask = mx.ones_like(shift_labels, dtype=mx.bool_)
-
-            valid_from_labels = shift_labels != -100
-            valid = valid_from_mask & valid_from_labels  # (B, T-1) bool
-
-            safe_labels = mx.where(
-                valid,
-                shift_labels,
-                mx.zeros_like(shift_labels),
-            )
-
-            # Per-token CE loss
-            per_token = nn.losses.cross_entropy(
-                shift_logits,
-                safe_labels.astype(mx.int32),
-                axis=-1,
-                reduction="none",
-            )
-
-            # Mask out ignored positions
-            per_token = per_token * valid.astype(per_token.dtype)
-
-            # Average over tokens
-            denom = mx.maximum(mx.sum(valid), mx.array(1, dtype=mx.int32))
-            loss = mx.sum(per_token) / denom
+            loss = mean_ce(logits, labels, attention_mask)
 
         return logits, loss, new_caches

@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    # arm64 macOS is required, not a preference: MLX imports on Linux but has no
+    # Metal device, so anything that evaluates an array fails there.
+    runs-on: macos-14
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        # No --extra convert: torch and transformers are needed only for the
+        # one-time weight conversion and dataset tokenization, never for tests.
+        run: uv sync --group dev
+
+      - name: Lint
+        run: uv run ruff check .
+
+      - name: Format
+        run: uv run ruff format --check .
+
+      - name: Test
+        # The whole suite runs on a tiny 2-layer model with no Mistral-7B weights
+        # and no Hugging Face download. -m slow is reserved for tests that need them.
+        run: uv run pytest -m "not slow"
+
+      - name: Type check
+        # ty is pre-1.0 (0.0.70); informational until it stabilises.
+        continue-on-error: true
+        run: uv run ty check
