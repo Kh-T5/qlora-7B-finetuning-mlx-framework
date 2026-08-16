@@ -2,7 +2,7 @@
 
 Living document. Updated with every change set — not archived when the current refactor ends.
 
-**Last updated:** 2026-08-12
+**Last updated:** 2026-08-14
 
 ---
 
@@ -137,13 +137,14 @@ Each item is one atomic commit. A pass is one branch and one PR.
 - [x] **CS6** — single `masked_ce` (B5), fix latent `ones_like` crash (B10)
 - [x] **CS7** — config split into frozen dataclasses + `constants.py`
 - [x] **CS8** — checkpoint format module (B7)
-- [ ] **CS9** — modernized README
+- [x] **CS9** — modernized README
 
 Pass 1 tests are **characterization** tests: they lock in current behaviour *including B2*, so
 that refactoring is provably safe. They are not correctness tests. CS10 replaces their numeric
 expectations with HF-derived golden values.
 
-Pass 1 ends at a demo point: green CI on a from-scratch transformer.
+Pass 1 ends at a demo point: green CI on a from-scratch transformer. **Complete** — 68 tests,
+hermetic, no 7B weights required.
 
 ### Axis 3 — Pass 2: numerics
 
