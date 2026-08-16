@@ -5,8 +5,8 @@ import mlx.nn as nn
 import mlx.optimizers as optim
 import numpy as np
 
+from mistral_qlora.checkpoint import load_adapters, save_adapters
 from mistral_qlora.config import MistralConfig, Paths, TrainConfig
-from mistral_qlora.data.adapters import load_lora_adapters, save_lora_adapters
 from mistral_qlora.data.data_loader_mlx import batch_iter, load_tokenized
 from mistral_qlora.model.model_wrapper import MistralForCausalLM
 from mistral_qlora.train.loss import masked_ce
@@ -70,7 +70,7 @@ def train_qlora(
     model: MistralForCausalLM,
     paths: Paths,
     train_config: TrainConfig,
-    lora_true: dict | bool = False,
+    model_config: MistralConfig,
 ):
     loss_train_history, loss_val_history, ppl_val_history = [], [], []
 
@@ -96,7 +96,7 @@ def train_qlora(
         ):
             global_step += 1
 
-            loss, grads = loss_and_grad(model, batch, lora_true)
+            loss, grads = loss_and_grad(model, batch, model_config.lora_true)
             opt.update(model, grads)
             mx.eval(model.parameters(), opt.state, loss)
             loss_train_history.append(loss.item())
@@ -112,13 +112,15 @@ def train_qlora(
                     paths,
                     batch_size=(4 * batch_size),
                     loaded_ds=val_ds,
-                    use_lora=lora_true,
+                    use_lora=model_config.lora_true,
                 )
                 print(f" Val loss: {val_loss:.4f}, Val perplexity: {val_ppl:.2f}")
                 ppl_val_history.append(val_ppl)
                 loss_val_history.append(val_loss)
 
-                save_lora_adapters(model, str(paths.adapters_dir / "adapters_next.npz"))
+                save_adapters(
+                    model, paths.adapters_dir / "adapters_next.npz", model_config
+                )
 
     return loss_train_history, loss_val_history, ppl_val_history
 
@@ -143,13 +145,13 @@ def main():
 
     current_adapters = paths.adapters_dir / "adapters_current.npz"
     if current_adapters.exists():
-        load_lora_adapters(model, str(current_adapters))
+        load_adapters(model, current_adapters, mistral_config)
         print("Loaded saved adapters.")
 
     loss_train_history, loss_val_history, ppl_val_history = train_qlora(
-        model, paths, train_config, lora_true=mistral_config.lora_true
+        model, paths, train_config, mistral_config
     )
-    save_lora_adapters(model, str(paths.adapters_dir / "adapters_next.npz"))
+    save_adapters(model, paths.adapters_dir / "adapters_next.npz", mistral_config)
     print("Saved new adapters.")
 
     paths.training_results.mkdir(parents=True, exist_ok=True)

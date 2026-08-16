@@ -11,6 +11,13 @@ import mlx.core as mx
 import numpy as np
 import pytest
 
+from mistral_qlora.checkpoint import (
+    layer_norm_path,
+    layer_weight_path,
+    save_embeddings,
+    save_norm,
+    save_quantized_weight,
+)
 from mistral_qlora.config import MistralConfig
 from mistral_qlora.model.model_wrapper import MistralForCausalLM
 from mistral_qlora.quant.quant_4bit import quantize_4bit_per_row
@@ -132,26 +139,20 @@ def checkpoint_dir(tmp_path, tiny_config):
     shapes = {**_attn_shapes(cfg), **_mlp_shapes(cfg)}
     for i in range(cfg.num_layers):
         for name, shape in shapes.items():
-            quant_w, scale, row_min, orig_in = quantize_4bit_per_row(
-                mx.random.normal(shape)
-            )
-            np.savez(
-                layers_dir / f"layer_{i:02d}_{name}.npz",
-                weight_q=quant_w,
-                scale=scale,
-                row_min=row_min,
-                orig_in=orig_in,
+            save_quantized_weight(
+                layer_weight_path(layers_dir, i, name),
+                *quantize_4bit_per_row(mx.random.normal(shape)),
             )
         norm = np.ones((cfg.hidden_size_atten,), dtype=np.float32)
-        np.save(layers_dir / f"layer_{i:02d}_input_layernorm.npy", norm)
-        np.save(layers_dir / f"layer_{i:02d}_post_attention_layernorm.npy", norm)
+        for name in ("input", "post_attention"):
+            save_norm(layer_norm_path(layers_dir, i, name), norm)
 
     other_path = tmp_path / "norm_embed_head.npz"
-    np.savez(
+    save_embeddings(
         other_path,
-        norm_np=np.ones((cfg.hidden_size_atten,), dtype=np.float32),
-        embed_np=np.random.randn(cfg.vocab_size, cfg.embed_dim).astype(np.float32),
-        head_np=np.random.randn(cfg.vocab_size, cfg.embed_dim).astype(np.float32),
+        norm=np.ones((cfg.hidden_size_atten,), dtype=np.float32),
+        embed=np.random.randn(cfg.vocab_size, cfg.embed_dim).astype(np.float32),
+        head=np.random.randn(cfg.vocab_size, cfg.embed_dim).astype(np.float32),
     )
 
     return {"layers_dir": str(layers_dir), "other_path": str(other_path)}

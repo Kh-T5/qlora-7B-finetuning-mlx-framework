@@ -90,7 +90,8 @@ MLP projections), so a single outlier inflates the range for every weight in the
 
 **B7 — Checkpoint format is unowned.** The `layer_{i:02d}_{name}.npz` scheme and its key names
 are written in one file and re-read in two others that never reference it. Adapters carry no
-metadata at all — no `r`, `alpha`, target projections or dtype. → CS8
+metadata at all — no `r`, `alpha`, target projections or dtype. **Fixed in CS8**:
+`checkpoint.py` owns filenames, keys, dtypes and metadata for every read and write.
 
 **B8 — `use_lora` defaults to `False` but is indexed as a dict.**
 `MistralAttention.__call__` and `MistralMLP.__call__` declare `use_lora: dict | bool = False`
@@ -135,7 +136,7 @@ Each item is one atomic commit. A pass is one branch and one PR.
 - [x] **CS5** — delete `_lora_or_linear` (B3), fix `use_lora` bool default (B8)
 - [x] **CS6** — single `masked_ce` (B5), fix latent `ones_like` crash (B10)
 - [x] **CS7** — config split into frozen dataclasses + `constants.py`
-- [ ] **CS8** — checkpoint format module (B7)
+- [x] **CS8** — checkpoint format module (B7)
 - [ ] **CS9** — modernized README
 
 Pass 1 tests are **characterization** tests: they lock in current behaviour *including B2*, so

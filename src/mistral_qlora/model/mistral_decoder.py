@@ -1,39 +1,17 @@
-import os
-
 import mlx.core as mx
 import mlx.nn as nn
-import numpy as np
 
-from mistral_qlora.config import MistralConfig
-from mistral_qlora.constants import (
-    ATTN_PROJECTIONS,
-    LAYER_NORM_TEMPLATE,
-    LAYER_WEIGHT_TEMPLATE,
-    MLP_PROJECTIONS,
-    NORM_NAMES,
+from mistral_qlora.checkpoint import (
+    layer_norm_path,
+    layer_weight_path,
+    load_embeddings,
+    load_norm,
+    load_quantized_weight,
 )
+from mistral_qlora.config import MistralConfig
+from mistral_qlora.constants import ATTN_PROJECTIONS, MLP_PROJECTIONS, NORM_NAMES
 from mistral_qlora.model.model_utils import MistralAttention, MistralMLP
 from mistral_qlora.quant.utils_linear import Linear
-
-
-def _load_packed(layers_dir: str, index: int, name: str) -> dict:
-    """Read one quantized projection into the dict `from_packed` expects."""
-    path = os.path.join(
-        layers_dir, LAYER_WEIGHT_TEMPLATE.format(index=index, name=name)
-    )
-    with np.load(path) as data:
-        return {
-            "weight_q": data["weight_q"],
-            "scale": data["scale"],
-            "row_min": data["row_min"],
-            "orig_in": int(data["orig_in"]),
-        }
-
-
-def _load_norm(layers_dir: str, index: int, name: str) -> mx.array:
-    """Read one unquantized RMSNorm weight."""
-    path = os.path.join(layers_dir, LAYER_NORM_TEMPLATE.format(index=index, name=name))
-    return mx.array(np.load(path), dtype=mx.float16)
 
 
 class MistralDecoderLayer(nn.Module):
@@ -181,11 +159,12 @@ class MistralDecoder(nn.Module):
 
         for i in range(config.num_layers):
             packed = {
-                name: _load_packed(layers_dir, i, name)
+                name: load_quantized_weight(layer_weight_path(layers_dir, i, name))
                 for name in ATTN_PROJECTIONS + MLP_PROJECTIONS
             }
             weights_norm = {
-                name: _load_norm(layers_dir, i, name) for name in NORM_NAMES
+                name: load_norm(layer_norm_path(layers_dir, i, name))
+                for name in NORM_NAMES
             }
 
             new_decoder.layers.append(
@@ -197,8 +176,9 @@ class MistralDecoder(nn.Module):
                 )
             )
 
-        with np.load(norm_path) as data:
-            new_decoder.final_norm.weight = mx.array(data["norm_np"], dtype=mx.float16)
+        new_decoder.final_norm.weight = mx.array(
+            load_embeddings(norm_path)["norm"], dtype=mx.float16
+        )
 
         return new_decoder
 
