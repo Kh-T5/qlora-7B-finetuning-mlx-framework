@@ -2,7 +2,7 @@
 
 import mlx.core as mx
 
-from mistral_qlora.train.train_utils import batch_token_loss_and_count
+from mistral_qlora.train.loss import masked_ce
 
 
 def test_forward_returns_vocab_logits(tiny_model, tiny_config, batch, use_lora_off):
@@ -69,7 +69,7 @@ def test_padding_is_excluded_from_the_loss(tiny_model, batch, use_lora_off):
     logits, _, _ = tiny_model(
         batch["input_ids"], attention_mask=mask, use_lora=use_lora_off
     )
-    _, n_tokens = batch_token_loss_and_count(logits, batch["labels"], mask)
+    _, n_tokens = masked_ce(logits, batch["labels"], mask)
 
     assert n_tokens.item() < b * (t - 1)
     assert n_tokens.item() > 0

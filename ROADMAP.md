@@ -81,7 +81,8 @@ written by the broken code and is unloadable. → CS0 (fixed), CS14 (documented)
 
 **B5 — Masked cross-entropy implemented twice and already drifting.** `MistralForCausalLM`
 and `train_utils.batch_token_loss_and_count` do the same shift-mask-CE, but only one casts to
-float32 — so training loss and eval loss are not strictly comparable. → CS6
+float32 — so training loss and eval loss are not strictly comparable. **Fixed in CS6**:
+one `masked_ce` in `train/loss.py` returning `(total_loss, n_tokens)`.
 
 **B6 — Per-row quantization is coarse.** One scale+min covers a full 4096-wide row (14336 for
 MLP projections), so a single outlier inflates the range for every weight in the row. → CS12
@@ -103,6 +104,10 @@ But `1e-8` is below fp16's smallest subnormal (~6e-8), so it *is* `0.0` — the 
 Any row whose range is under ~1e-6 gets `scale = 0`, and `(W - row_min) / scale` becomes
 `0/0`. It does not raise: the NaN packs to zeros, so the row silently quantizes to garbage.
 Found by the CS2 suite; covered by an `xfail(strict=True)` that flips green when fixed. → CS12
+
+**B10 — `mx.ones_like(x, dtype=...)` raises TypeError.** Both copies of the masked CE built
+their all-valid mask that way, but the branch only runs when `attention_mask is None`, which
+the model path never did. Found by the CS6 loss tests. **Fixed in CS6.**
 
 **The test suite is red at `main` and has been.** 8 of 9 tests fail, 7 of them on B8 —
 verified by running `git archive HEAD` in a clean directory, so this pre-dates the refactor.
@@ -127,7 +132,7 @@ Each item is one atomic commit. A pass is one branch and one PR.
 - [x] **CS3** — src-layout rename to `mistral_qlora/` (suite unchanged: 30 passed, 1 xfailed)
 - [x] **CS4** — dead code removal, `zip(..., strict=True)`
 - [x] **CS5** — delete `_lora_or_linear` (B3), fix `use_lora` bool default (B8)
-- [ ] **CS6** — single `masked_ce` (B5)
+- [x] **CS6** — single `masked_ce` (B5), fix latent `ones_like` crash (B10)
 - [ ] **CS7** — config split into frozen dataclasses
 - [ ] **CS8** — checkpoint format module (B7)
 - [ ] **CS9** — modernized README
