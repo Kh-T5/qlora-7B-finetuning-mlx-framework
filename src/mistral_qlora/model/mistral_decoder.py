@@ -4,9 +4,36 @@ import mlx.core as mx
 import mlx.nn as nn
 import numpy as np
 
-from mistral_qlora.config import mistral_other_layers_quant_path
-from mistral_qlora.model.model_utils import MistralAttention, MistralConfig, MistralMLP
+from mistral_qlora.config import MistralConfig
+from mistral_qlora.constants import (
+    ATTN_PROJECTIONS,
+    LAYER_NORM_TEMPLATE,
+    LAYER_WEIGHT_TEMPLATE,
+    MLP_PROJECTIONS,
+    NORM_NAMES,
+)
+from mistral_qlora.model.model_utils import MistralAttention, MistralMLP
 from mistral_qlora.quant.utils_linear import Linear
+
+
+def _load_packed(layers_dir: str, index: int, name: str) -> dict:
+    """Read one quantized projection into the dict `from_packed` expects."""
+    path = os.path.join(
+        layers_dir, LAYER_WEIGHT_TEMPLATE.format(index=index, name=name)
+    )
+    with np.load(path) as data:
+        return {
+            "weight_q": data["weight_q"],
+            "scale": data["scale"],
+            "row_min": data["row_min"],
+            "orig_in": int(data["orig_in"]),
+        }
+
+
+def _load_norm(layers_dir: str, index: int, name: str) -> mx.array:
+    """Read one unquantized RMSNorm weight."""
+    path = os.path.join(layers_dir, LAYER_NORM_TEMPLATE.format(index=index, name=name))
+    return mx.array(np.load(path), dtype=mx.float16)
 
 
 class MistralDecoderLayer(nn.Module):
@@ -139,78 +166,40 @@ class MistralDecoder(nn.Module):
         self.final_norm = nn.RMSNorm(config.hidden_size_atten, eps=config.rms_norm_eps)
 
     @classmethod
-    def build_decoder_from_npz(cls, config: MistralConfig, dir: str):
-        """
-        Constructor for MistralDecoder block: 32 * MistralDecoderLayer,
-        Mirors original Mistral architechure:
-                                        (0-31): 32 x MistralDecoderLayer(
-                                    (self_attn): MistralAttention(
-                                    (q_proj): Linear(in_features=4096, out_features=4096, bias=False)
-                                    (k_proj): Linear(in_features=4096, out_features=1024, bias=False)
-                                    (v_proj): Linear(in_features=4096, out_features=1024, bias=False)
-                                    (o_proj): Linear(in_features=4096, out_features=4096, bias=False)
-                                    )
-                                    (mlp): MistralMLP(
-                                    (gate_proj): Linear(in_features=4096, out_features=14336, bias=False)
-                                    (up_proj): Linear(in_features=4096, out_features=14336, bias=False)
-                                    (down_proj): Linear(in_features=14336, out_features=4096, bias=False)
-                                    (act_fn): SiLUActivation()
-                                    )
-        Inputs:
-            - config, MistralConfig
-            - dir, str, directory where pre-trained model weigths are stored
+    def build_decoder_from_npz(
+        cls, config: MistralConfig, layers_dir: str, norm_path: str
+    ):
+        """Build the decoder stack from a quantized checkpoint on disk.
 
+        Inputs:
+            config: MistralConfig
+            layers_dir: directory holding the per-layer .npz and .npy files
+            norm_path: .npz holding the final RMSNorm weight under "norm_np"
         """
-        names_attn = ["v_proj", "k_proj", "q_proj", "o_proj"]
-        names_mlp = ["gate_proj", "down_proj", "up_proj"]
-        names_norm = ["input", "post_attention"]
-        sfx_quant = ".npz"
-        sfx_no_quant = ".npy"
         new_decoder = cls(config)
         new_decoder.layers = []
 
         for i in range(config.num_layers):
-            packed_weights_attn = {}
-            for name in names_attn:
-                path = os.path.join(dir, f"layer_{i:02d}_{name}{sfx_quant}")
-                with np.load(path) as data:
-                    packed_weights_attn[name] = {
-                        "weight_q": data["weight_q"],
-                        "scale": data["scale"],
-                        "row_min": data["row_min"],
-                        "orig_in": int(data["orig_in"]),
-                    }
-
-            packed_weights_mlp = {}
-            for name in names_mlp:
-                path = os.path.join(dir, f"layer_{i:02d}_{name}{sfx_quant}")
-                with np.load(path) as data:
-                    packed_weights_mlp[name] = {
-                        "weight_q": data["weight_q"],
-                        "scale": data["scale"],
-                        "row_min": data["row_min"],
-                        "orig_in": int(data["orig_in"]),
-                    }
-
-            weights_norm = {}
-            for name in names_norm:
-                path = os.path.join(
-                    dir, f"layer_{i:02d}_{name}_layernorm{sfx_no_quant}"
-                )
-                weights_norm[name] = mx.array(np.load(path), dtype=mx.float16)
+            packed = {
+                name: _load_packed(layers_dir, i, name)
+                for name in ATTN_PROJECTIONS + MLP_PROJECTIONS
+            }
+            weights_norm = {
+                name: _load_norm(layers_dir, i, name) for name in NORM_NAMES
+            }
 
             new_decoder.layers.append(
                 MistralDecoderLayer.from_quantized_weights(
                     config,
-                    packed_weights_mlp=packed_weights_mlp,
-                    packed_weights_attn=packed_weights_attn,
+                    packed_weights_mlp={n: packed[n] for n in MLP_PROJECTIONS},
+                    packed_weights_attn={n: packed[n] for n in ATTN_PROJECTIONS},
                     weights_norm=weights_norm,
                 )
             )
-            with np.load(mistral_other_layers_quant_path) as data:
-                new_decoder.final_norm.weight = mx.array(
-                    data["norm_np"], dtype=mx.float16
-                )
+
+        with np.load(norm_path) as data:
+            new_decoder.final_norm.weight = mx.array(data["norm_np"], dtype=mx.float16)
+
         return new_decoder
 
     def __call__(

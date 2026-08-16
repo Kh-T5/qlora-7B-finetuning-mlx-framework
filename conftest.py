@@ -11,7 +11,7 @@ import mlx.core as mx
 import numpy as np
 import pytest
 
-from mistral_qlora.model.model_utils import MistralConfig
+from mistral_qlora.config import MistralConfig
 from mistral_qlora.model.model_wrapper import MistralForCausalLM
 from mistral_qlora.quant.quant_4bit import quantize_4bit_per_row
 
@@ -47,17 +47,17 @@ def tiny_config() -> MistralConfig:
     num_key_value_heads < num_attention_heads so GQA expansion is exercised.
     Dropout is zero to keep every test deterministic.
     """
-    cfg = MistralConfig()
-    cfg.vocab_size = 128
-    cfg.embed_dim = 64
-    cfg.hidden_size_atten = 64
-    cfg.hidden_size_mlp = 128
-    cfg.num_attention_heads = 4
-    cfg.num_key_value_heads = 2
-    cfg.head_dim = 16
-    cfg.num_layers = 2
-    cfg.dropout = 0.0
-    return cfg
+    return MistralConfig(
+        vocab_size=128,
+        embed_dim=64,
+        hidden_size_atten=64,
+        hidden_size_mlp=128,
+        num_attention_heads=4,
+        num_key_value_heads=2,
+        head_dim=16,
+        num_layers=2,
+        dropout=0.0,
+    )
 
 
 def pack_weight(w: mx.array) -> dict:
@@ -123,13 +123,8 @@ def weights_norm(tiny_config) -> dict:
 
 
 @pytest.fixture
-def checkpoint_dir(tmp_path, tiny_config, monkeypatch):
-    """Write a tiny checkpoint in the on-disk layout and return its paths.
-
-    `build_decoder_from_npz` reads `mistral_other_layers_quant_path` from its module
-    rather than from its `dir` argument, so that name is patched to keep the fixture
-    from reaching the real checkpoint under data/.
-    """
+def checkpoint_dir(tmp_path, tiny_config):
+    """Write a tiny checkpoint in the on-disk layout and return its paths."""
     cfg = tiny_config
     layers_dir = tmp_path / "decoder_mlp_layers"
     layers_dir.mkdir()
@@ -159,10 +154,6 @@ def checkpoint_dir(tmp_path, tiny_config, monkeypatch):
         head_np=np.random.randn(cfg.vocab_size, cfg.embed_dim).astype(np.float32),
     )
 
-    monkeypatch.setattr(
-        "mistral_qlora.model.mistral_decoder.mistral_other_layers_quant_path",
-        str(other_path),
-    )
     return {"layers_dir": str(layers_dir), "other_path": str(other_path)}
 
 

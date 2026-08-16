@@ -1,28 +1,11 @@
 import math
-from dataclasses import dataclass, field
 
 import mlx.core as mx
 import mlx.nn as nn
 
-from mistral_qlora.config import (
-    LoRA_r,
-    alpha,
-    dropout,
-    embed_dim,
-    head_dim,
-    hidden_size_atten,
-    hidden_size_mlp,
-    lora_true,
-    num_attention_heads,
-    num_key_value_heads,
-    num_layers,
-    rms_norm_eps,
-    rope_theta,
-    vocab_size,
-)
+from mistral_qlora.config import MistralConfig
+from mistral_qlora.constants import LORA_TARGETS
 from mistral_qlora.quant.utils_linear import Linear, LoRALinear, QuantizedLinear
-
-LORA_TARGETS = ("q", "k", "v", "o", "gate", "up", "down")
 
 
 def resolve_use_lora(use_lora: "dict | bool") -> dict:
@@ -34,24 +17,6 @@ def resolve_use_lora(use_lora: "dict | bool") -> dict:
     if isinstance(use_lora, bool):
         return dict.fromkeys(LORA_TARGETS, use_lora)
     return use_lora
-
-
-@dataclass
-class MistralConfig:
-    vocab_size: int = vocab_size
-    embed_dim: int = embed_dim
-    alpha: float = alpha
-    dropout: float = dropout
-    r: int = LoRA_r
-    lora_true: dict = field(default_factory=lambda: lora_true.copy())
-    hidden_size_atten: int = hidden_size_atten
-    rms_norm_eps: float = rms_norm_eps
-    num_attention_heads: int = num_attention_heads
-    num_key_value_heads: int = num_key_value_heads
-    head_dim: int = head_dim
-    rope_theta: float = rope_theta
-    hidden_size_mlp: int = hidden_size_mlp
-    num_layers: int = num_layers
 
 
 class MistralAttention(nn.Module):

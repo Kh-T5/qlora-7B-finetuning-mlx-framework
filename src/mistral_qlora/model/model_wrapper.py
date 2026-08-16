@@ -1,8 +1,8 @@
 import mlx.core as mx
 import mlx.nn as nn
 
+from mistral_qlora.config import MistralConfig
 from mistral_qlora.model.model import MistralModel
-from mistral_qlora.model.model_utils import MistralConfig
 from mistral_qlora.train.loss import mean_ce
 
 

@@ -1,26 +1,13 @@
 import math
-import os
 
 import mlx.core as mx
 import mlx.nn as nn
 import mlx.optimizers as optim
 import numpy as np
 
-from mistral_qlora.config import (
-    MAX_LENGTH,
-    batchsize,
-    epochs,
-    learning_rate,
-    mistral_adapters_path_current,
-    mistral_adapters_path_next,
-    mistral_decoder_layers_quant_dir,
-    mistral_other_layers_quant_path,
-    tokenized_ds_path,
-    training_results_dir,
-)
+from mistral_qlora.config import MistralConfig, Paths, TrainConfig
 from mistral_qlora.data.adapters import load_lora_adapters, save_lora_adapters
 from mistral_qlora.data.data_loader_mlx import batch_iter, load_tokenized
-from mistral_qlora.model.model_utils import MistralConfig
 from mistral_qlora.model.model_wrapper import MistralForCausalLM
 from mistral_qlora.train.loss import masked_ce
 from mistral_qlora.train.train_utils import lm_loss_fn, make_lora_only_trainable
@@ -28,17 +15,17 @@ from mistral_qlora.train.train_utils import lm_loss_fn, make_lora_only_trainable
 
 def evaluate_perplexity(
     model: MistralForCausalLM,
-    tokenized_ds_path: str = tokenized_ds_path,
-    batch_size: int = batchsize,
+    paths: Paths,
+    batch_size: int,
     loaded_ds=None,
     use_lora: dict | bool = False,
 ):
-    """
-    Evaluate average loss and perplexity on the Dolly validation split.
-    Typo: val dataset stored as "test"
+    """Average loss and perplexity over the validation split.
+
+    The split is stored under the name "test".
     """
     if loaded_ds is None:
-        val_ds = load_tokenized("test", tokenized_ds_path)
+        val_ds = load_tokenized("test", str(paths.tokenized_dataset))
     else:
         val_ds = loaded_ds
     if hasattr(model, "training"):
@@ -81,10 +68,8 @@ def evaluate_perplexity(
 
 def train_qlora(
     model: MistralForCausalLM,
-    tokenized_ds_path: str = tokenized_ds_path,
-    epochs: int = epochs,
-    batch_size: int = batchsize,
-    learning_rate: float = learning_rate,
+    paths: Paths,
+    train_config: TrainConfig,
     lora_true: dict | bool = False,
 ):
     loss_train_history, loss_val_history, ppl_val_history = [], [], []
@@ -93,17 +78,18 @@ def train_qlora(
     model.train()
     mx.eval(model.parameters())
 
-    opt = optim.AdamW(learning_rate=learning_rate)
+    opt = optim.AdamW(learning_rate=train_config.learning_rate)
     loss_and_grad = nn.value_and_grad(model, lm_loss_fn)
     print("Started training.")
 
-    train_ds = load_tokenized("train", tokenized_ds_path)
-    val_ds = load_tokenized("test", tokenized_ds_path)
+    batch_size = train_config.batch_size
+    train_ds = load_tokenized("train", str(paths.tokenized_dataset))
+    val_ds = load_tokenized("test", str(paths.tokenized_dataset))
     steps_per_epoch = math.ceil(len(train_ds) / batch_size)
 
     global_step = 0
-    for epoch in range(epochs):
-        print(f"\n=== Epoch {epoch + 1}/{epochs} ===")
+    for epoch in range(train_config.epochs):
+        print(f"\n=== Epoch {epoch + 1}/{train_config.epochs} ===")
 
         for step_in_epoch, batch in enumerate(
             batch_iter(train_ds, batch_size, shuffle=True)
@@ -120,10 +106,10 @@ def train_qlora(
                 f"global_step {global_step}: loss={loss.item():.4f}"
             )
 
-            if global_step % 500 == 0:
+            if global_step % train_config.eval_every == 0:
                 val_loss, val_ppl = evaluate_perplexity(
                     model,
-                    tokenized_ds_path=tokenized_ds_path,
+                    paths,
                     batch_size=(4 * batch_size),
                     loaded_ds=val_ds,
                     use_lora=lora_true,
@@ -132,40 +118,50 @@ def train_qlora(
                 ppl_val_history.append(val_ppl)
                 loss_val_history.append(val_loss)
 
-                save_lora_adapters(model, mistral_adapters_path_next)
+                save_lora_adapters(model, str(paths.adapters_dir / "adapters_next.npz"))
 
     return loss_train_history, loss_val_history, ppl_val_history
 
 
-if __name__ == "__main__":
+def main():
+    paths = Paths()
+    train_config = TrainConfig()
     mistral_config = MistralConfig()
+
     print(
-        f"Mistral Config : \n - Length input: {MAX_LENGTH}\n - Batchsize: {batchsize}\n - Activated LoRA: {mistral_config.lora_true}"
+        f"Mistral Config :\n - Length input: {train_config.max_length}"
+        f"\n - Batchsize: {train_config.batch_size}"
+        f"\n - Activated LoRA: {mistral_config.lora_true}"
     )
     print("Loading model..")
     model = MistralForCausalLM.from_mistral_7b(
         mistral_config,
-        mistral_decoder_layers_quant_dir,
-        mistral_other_layers_quant_path,
+        str(paths.quantized_layers),
+        str(paths.quantized_other),
     )
     print("Model loaded.")
 
-    if os.path.exists(mistral_adapters_path_current):
-        load_lora_adapters(model, mistral_adapters_path_current)
+    current_adapters = paths.adapters_dir / "adapters_current.npz"
+    if current_adapters.exists():
+        load_lora_adapters(model, str(current_adapters))
         print("Loaded saved adapters.")
 
     loss_train_history, loss_val_history, ppl_val_history = train_qlora(
-        model, lora_true=mistral_config.lora_true
+        model, paths, train_config, lora_true=mistral_config.lora_true
     )
-    save_lora_adapters(model, mistral_adapters_path_next)
+    save_lora_adapters(model, str(paths.adapters_dir / "adapters_next.npz"))
     print("Saved new adapters.")
 
-    path = os.path.join(training_results_dir, "Tier1.npz")
+    paths.training_results.mkdir(parents=True, exist_ok=True)
     np.savez(
-        path,
+        paths.training_results / "Tier1.npz",
         train_loss=np.array(loss_train_history),
         val_loss=np.array(loss_val_history),
         val_ppl=np.array(ppl_val_history),
     )
 
     print("Done.")
+
+
+if __name__ == "__main__":
+    main()

@@ -40,6 +40,7 @@ Verified 2026-08-12.
 | Hardware target | Apple Silicon, developed on M4 Pro / 24 GB unified |
 | Python | 3.12 (MLX 0.32.0 ships cp310-cp314 + `macosx_26_0_arm64`) |
 | Env | uv. Conda is retired. |
+| Config | frozen `MistralConfig` / `TrainConfig` / `Paths` + `constants.py` |
 
 **Training has never completed a full run.** `data/training_results/` is empty. See B1 below.
 
@@ -133,7 +134,7 @@ Each item is one atomic commit. A pass is one branch and one PR.
 - [x] **CS4** — dead code removal, `zip(..., strict=True)`
 - [x] **CS5** — delete `_lora_or_linear` (B3), fix `use_lora` bool default (B8)
 - [x] **CS6** — single `masked_ce` (B5), fix latent `ones_like` crash (B10)
-- [ ] **CS7** — config split into frozen dataclasses
+- [x] **CS7** — config split into frozen dataclasses + `constants.py`
 - [ ] **CS8** — checkpoint format module (B7)
 - [ ] **CS9** — modernized README
 

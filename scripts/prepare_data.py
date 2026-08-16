@@ -1,21 +1,16 @@
 from datasets import load_dataset
 from transformers import AutoTokenizer
 
-from mistral_qlora.config import (
-    MAX_LENGTH,
-    MODEL_NAME,
-    SEED,
-    Dataset_dolly,
-    split_val,
-    tokenized_ds_path,
-)
+from mistral_qlora.config import Paths, TrainConfig
+from mistral_qlora.constants import DATASET_NAME, IGNORE_INDEX, MODEL_NAME
 
-### Init tokenizer
+TRAIN_CONFIG = TrainConfig()
+PATHS = Paths()
+
 tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME, use_fast=True)
 tokenizer.pad_token = tokenizer.eos_token
 tokenizer.pad_token_id = tokenizer.eos_token_id
 
-# Using same token for padding and delimitting end of sentence
 eos_id = tokenizer.eos_token_id
 pad_id = tokenizer.pad_token_id
 
@@ -37,7 +32,7 @@ def preprocess_batch(batch):
     contexts = batch["context"]
     responses = batch["response"]
 
-    prompts = []  # Concat instruction and context when it is available
+    prompts = []
     for instr, ctx in zip(instructions, contexts, strict=True):
         if ctx:
             prompt = f"Instruction: {instr}\nContext: {ctx}\nResponse:"
@@ -45,7 +40,6 @@ def preprocess_batch(batch):
             prompt = f"Instruction: {instr}\nResponse:"
         prompts.append(prompt)
 
-    # Tokenize promt and response
     prompt_enc = tokenizer(
         prompts,
         add_special_tokens=False,
@@ -62,25 +56,18 @@ def preprocess_batch(batch):
     for prompt_ids, response_ids in zip(
         prompt_enc["input_ids"], response_enc["input_ids"], strict=True
     ):
-        ids = (
-            prompt_ids + response_ids + [eos_id]
-        )  ### Concat prompt, response and end of sentense token for model input
-        labels = (
-            [-100] * len(prompt_ids) + response_ids + [eos_id]
-        )  ### labels to keep track of ids belonging to prompt and the ones belonging to response / special tokens
+        ids = prompt_ids + response_ids + [eos_id]
+        labels = [IGNORE_INDEX] * len(prompt_ids) + response_ids + [eos_id]
 
-        # Truncation at MAX_LENGTH
-        ids = ids[:MAX_LENGTH]
-        labels = labels[:MAX_LENGTH]
+        ids = ids[: TRAIN_CONFIG.max_length]
+        labels = labels[: TRAIN_CONFIG.max_length]
 
-        pad_len = MAX_LENGTH - len(ids)
-        if pad_len > 0:  # When possible fill in remaining space with pad tokens
+        pad_len = TRAIN_CONFIG.max_length - len(ids)
+        if pad_len > 0:
             ids = ids + [pad_id] * pad_len
-            labels = labels + [-100] * pad_len
+            labels = labels + [IGNORE_INDEX] * pad_len
 
-        attention_mask = [1] * (MAX_LENGTH - pad_len) + [
-            0
-        ] * pad_len  # Mask for padding tokens
+        attention_mask = [1] * (TRAIN_CONFIG.max_length - pad_len) + [0] * pad_len
 
         all_input_ids.append(ids)
         all_labels.append(labels)
@@ -95,19 +82,17 @@ def preprocess_batch(batch):
 
 if __name__ == "__main__":
     print("Loading dataset...")
-    dolly_ds = load_dataset(Dataset_dolly)["train"]
+    dolly_ds = load_dataset(DATASET_NAME)["train"]
 
-    ### Tokenizing the dataset
     print("Tokenizing Dolly dataset...")
     tokenized_ds = dolly_ds.map(preprocess_batch, batched=True)
     print("Splitting...")
     split_ds = tokenized_ds.train_test_split(
-        test_size=split_val,
-        seed=SEED,
+        test_size=TRAIN_CONFIG.val_split,
+        seed=TRAIN_CONFIG.seed,
         shuffle=True,
     )
 
-    ### Saving data using hugging face dataset
     print("Saving tokenized dataset...")
-    split_ds.save_to_disk(tokenized_ds_path)
+    split_ds.save_to_disk(str(PATHS.tokenized_dataset))
     print("Done.")

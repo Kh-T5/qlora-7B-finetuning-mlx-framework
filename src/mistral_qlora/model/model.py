@@ -2,10 +2,10 @@ import mlx.core as mx
 import mlx.nn as nn
 import numpy as np
 
+from mistral_qlora.config import MistralConfig
 from mistral_qlora.model.mistral_decoder import MistralDecoder, MistralDecoderLayer
 from mistral_qlora.model.model_utils import (
     MistralAttention,
-    MistralConfig,
     MistralMLP,
     resolve_use_lora,
 )
@@ -38,7 +38,9 @@ class MistralModel(nn.Module):
         cls, config: MistralConfig, dir_weights_q: str, path_weights: str
     ) -> "MistralModel":
         new_model = cls(config)
-        new_model.decoder = MistralDecoder.build_decoder_from_npz(config, dir_weights_q)
+        new_model.decoder = MistralDecoder.build_decoder_from_npz(
+            config, dir_weights_q, path_weights
+        )
         with np.load(path_weights) as data:
             new_model.embed.weight = mx.array(data["embed_np"], dtype=mx.float16)
             weights_lm_head = mx.array(data["head_np"], dtype=mx.float16)

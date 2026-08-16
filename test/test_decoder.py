@@ -59,7 +59,7 @@ def test_decoder_layer_is_residual(
 def test_build_decoder_from_npz(tiny_config, checkpoint_dir, use_lora_off):
     """The on-disk checkpoint layout round-trips into a working decoder."""
     decoder = MistralDecoder.build_decoder_from_npz(
-        tiny_config, checkpoint_dir["layers_dir"]
+        tiny_config, checkpoint_dir["layers_dir"], checkpoint_dir["other_path"]
     )
     b, t, d = 2, 7, tiny_config.hidden_size_atten
 
@@ -72,7 +72,7 @@ def test_build_decoder_from_npz(tiny_config, checkpoint_dir, use_lora_off):
 
 def test_decoder_returns_one_cache_per_layer(tiny_config, checkpoint_dir, use_lora_off):
     decoder = MistralDecoder.build_decoder_from_npz(
-        tiny_config, checkpoint_dir["layers_dir"]
+        tiny_config, checkpoint_dir["layers_dir"], checkpoint_dir["other_path"]
     )
     x = mx.random.normal((1, 5, tiny_config.hidden_size_atten))
 
